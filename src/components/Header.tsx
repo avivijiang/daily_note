@@ -5,9 +5,10 @@ import { formatDate, getWeekDays, addDays, todayStr } from '@/lib/utils';
 interface HeaderProps {
   currentDate: string;
   onDateChange: (date: string) => void;
+  onSettingsClick: () => void;
 }
 
-export function Header({ currentDate, onDateChange }: HeaderProps) {
+export function Header({ currentDate, onDateChange, onSettingsClick }: HeaderProps) {
   const weekDays = getWeekDays(currentDate);
   const today = todayStr();
   const isToday = currentDate === today;
@@ -52,7 +53,7 @@ export function Header({ currentDate, onDateChange }: HeaderProps) {
               onClick={() => onDateChange(today)}
               className="px-3 py-1 text-xs font-medium bg-[#1A3A5C] text-white rounded-full hover:bg-[#2a4a6c] transition-colors"
             >
-              今天
+              回到今天
             </button>
           )}
           <button
@@ -68,6 +69,14 @@ export function Header({ currentDate, onDateChange }: HeaderProps) {
             title="后一天"
           >
             ›
+          </button>
+          {/* Settings gear */}
+          <button
+            onClick={onSettingsClick}
+            className="w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors text-sm"
+            title="API Key 设置"
+          >
+            ⚙
           </button>
         </div>
       </div>

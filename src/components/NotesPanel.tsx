@@ -7,6 +7,8 @@ import { useRef } from 'react';
 interface NotesPanelProps {
   data: DiaryData;
   onChange: (data: DiaryData) => void;
+  onEndRecord: () => void;
+  hasAnalysis: boolean;
 }
 
 const MOOD_OPTIONS = [
@@ -17,7 +19,7 @@ const MOOD_OPTIONS = [
   { score: 1, emoji: '😞', label: '很差' },
 ];
 
-export function NotesPanel({ data, onChange }: NotesPanelProps) {
+export function NotesPanel({ data, onChange, onEndRecord, hasAnalysis }: NotesPanelProps) {
   const todoInputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
 
   const update = (partial: Partial<DiaryData>) => {
@@ -27,7 +29,6 @@ export function NotesPanel({ data, onChange }: NotesPanelProps) {
   // ── Mood ──
   const handleMoodSelect = (score: number) => {
     if (data.mood?.score === score) {
-      // toggle off
       update({ mood: null });
     } else {
       update({ mood: { score, note: data.mood?.note ?? '' } });
@@ -45,10 +46,7 @@ export function NotesPanel({ data, onChange }: NotesPanelProps) {
   const addTodo = () => {
     const newTodo: Todo = { id: generateId(), text: '', done: false };
     update({ todos: [...data.todos, newTodo] });
-    // Focus the new input after render
-    setTimeout(() => {
-      todoInputRefs.current.get(newTodo.id)?.focus();
-    }, 50);
+    setTimeout(() => todoInputRefs.current.get(newTodo.id)?.focus(), 50);
   };
 
   const updateTodo = (id: string, partial: Partial<Todo>) => {
@@ -169,9 +167,15 @@ export function NotesPanel({ data, onChange }: NotesPanelProps) {
                   color: todo.done ? '#bbb' : '#333',
                 }}
               />
+              {/* Carried-from label */}
+              {todo.carriedFrom && (
+                <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded shrink-0">
+                  ↩ 昨日
+                </span>
+              )}
               <button
                 onClick={() => removeTodo(todo.id)}
-                className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-all text-xs w-4 h-4 flex items-center justify-center"
+                className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-all text-xs w-4 h-4 flex items-center justify-center shrink-0"
               >
                 ×
               </button>
@@ -185,6 +189,21 @@ export function NotesPanel({ data, onChange }: NotesPanelProps) {
             <span>添加一项</span>
           </button>
         </div>
+      </div>
+
+      {/* ─── End Record Button ─── */}
+      <div className="pb-2">
+        <button
+          onClick={onEndRecord}
+          className="w-full py-3.5 rounded-xl text-sm font-medium transition-all active:scale-[0.98]"
+          style={{
+            backgroundColor: hasAnalysis ? '#9ca3af' : '#1A3A5C',
+            color: '#fff',
+            borderRadius: 12,
+          }}
+        >
+          {hasAnalysis ? '重新分析' : '结束记录，探讨一下 →'}
+        </button>
       </div>
     </div>
   );

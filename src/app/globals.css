@@ -36,6 +36,34 @@ body {
   background: #b0aca4;
 }
 
+/* Wax seal animation */
+.seal-stamp {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #c0392b, #7b241c);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  text-align: center;
+  line-height: 1.6;
+  animation: sealIn 0.3s ease-out forwards, sealOut 0.3s ease-in 0.8s forwards;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  user-select: none;
+}
+
+@keyframes sealIn {
+  from { transform: scale(0) rotate(-15deg); opacity: 0; }
+  to   { transform: scale(1) rotate(-8deg);  opacity: 1; }
+}
+
+@keyframes sealOut {
+  from { transform: scale(1)   rotate(-8deg); opacity: 1; }
+  to   { transform: scale(1.1) rotate(-8deg); opacity: 0; }
+}
+
 /* Time input appearance */
 input[type="time"]::-webkit-calendar-picker-indicator {
   opacity: 0.4;
