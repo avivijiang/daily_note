@@ -12,7 +12,7 @@ export interface Todo {
   id: string;
   text: string;
   done: boolean;
-  carriedFrom?: string | null; // date string if carried from previous day
+  carriedFrom?: string | null;
 }
 
 export interface Mood {
@@ -26,6 +26,7 @@ export interface AnalysisSummary {
   gratitude: string[];
   todos: string[];
   score: number;
+  goalAlignment?: number; // 1-10, AI eval of alignment with active goals
 }
 
 export interface Analysis {
@@ -33,7 +34,7 @@ export interface Analysis {
   diary: string;
   summary: AnalysisSummary | null;
   insight: string;
-  personas: Partial<Record<PersonaId, string>>;
+  personas: Record<string, string>; // preset or custom persona id → text
 }
 
 export interface DiaryData {
@@ -44,7 +45,54 @@ export interface DiaryData {
   gratitude: [string, string, string];
   todos: Todo[];
   analysis?: Analysis | null;
+  greeting?: string; // AI or fallback daily greeting
 }
+
+// ── Goals ─────────────────────────────────────────────────────────────
+
+export interface Goal {
+  id: string;
+  title: string;
+  description: string;
+  deadline?: string; // YYYY-MM-DD
+  isActive: boolean;
+  createdAt: string;
+}
+
+// ── Custom Personas ───────────────────────────────────────────────────
+
+export interface CustomPersona {
+  id: string;
+  name: string;
+  description: string;
+  systemPrompt: string;
+  accentColor: string; // HEX
+  emoji: string;
+  createdAt: string;
+}
+
+// ── Weekly Report ─────────────────────────────────────────────────────
+
+export interface WeekStats {
+  totalRecordDays: number;
+  avgMoodScore: number;
+  avgGoalAlignment: number;
+  mostProductiveDay: string;
+  totalEventHours: number;
+  topCategory: string;
+}
+
+export interface WeeklyReport {
+  generatedAt: string;
+  weekStart: string;
+  weekEnd: string;
+  summary: string;
+  stats: WeekStats | null;
+  patterns: string;
+  insight: string;
+}
+
+// ── Preset types ──────────────────────────────────────────────────────
 
 export type PersonaId = 'jobs' | 'naval' | 'munger' | 'yangming' | 'musk';
 

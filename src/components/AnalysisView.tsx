@@ -1,54 +1,59 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Analysis, AnalysisSummary, DiaryData, PersonaId } from '@/lib/types';
+import { Analysis, AnalysisSummary, CustomPersona, DiaryData, Goal } from '@/lib/types';
 import {
-  streamClaude,
-  buildDiaryMessage,
+  buildAnalysisMessage,
   ANALYSIS_SYSTEM_PROMPT,
   parseStream,
 } from '@/lib/claude';
-import { PERSONAS, PERSONA_MAP } from '@/lib/personas';
+import { streamAI, getActiveModel } from '@/lib/ai';
+import { PERSONAS } from '@/lib/personas';
+import { loadCustomPersonas } from '@/lib/customPersonas';
+import { loadGoals } from '@/lib/goals';
+import { PersonaCreatorModal } from '@/components/PersonaCreatorModal';
 
-// ─── Typewriter hook ────────────────────────────────────────────────
-function useTypewriter(text: string, speed = 25, active = true) {
+// ── Unified persona shape for rendering ──────────────────────────────
+interface AnyPersona {
+  id: string;
+  name: string;
+  color: string;
+  bgColor: string;
+  sealText: string;
+  systemPrompt: string;
+  isCustom?: boolean;
+}
+
+function toAnyPersona(p: CustomPersona): AnyPersona {
+  return {
+    id: p.id,
+    name: `${p.emoji} ${p.name}`,
+    color: p.accentColor,
+    bgColor: p.accentColor + '0d',
+    sealText: p.emoji,
+    systemPrompt: p.systemPrompt,
+    isCustom: true,
+  };
+}
+
+// ─── Typewriter hook ──────────────────────────────────────────────────
+function useTypewriter(text: string, active = true) {
   const [displayed, setDisplayed] = useState('');
-  const indexRef = useRef(0);
-  const textRef = useRef(text);
 
   useEffect(() => {
-    textRef.current = text;
-  });
-
-  // Reset when text switches entirely (cached replay)
-  useEffect(() => {
-    if (!active) {
-      setDisplayed(text);
-      return;
-    }
-    indexRef.current = 0;
-    setDisplayed('');
-  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // When streaming, just keep up with incoming text
-  useEffect(() => {
-    if (!active) return;
-    if (text.length > displayed.length) {
-      setDisplayed(text);
-    }
+    if (!active) { setDisplayed(text); return; }
+    if (text.length > displayed.length) setDisplayed(text);
   }, [text, displayed.length, active]);
 
   return displayed;
 }
 
-// ─── Score stars ─────────────────────────────────────────────────────
+// ─── Score stars ──────────────────────────────────────────────────────
 function ScoreStars({ score }: { score: number }) {
   return (
     <span className="text-sm">
       {Array.from({ length: 10 }, (_, i) => (
-        <span key={i} style={{ color: i < score ? '#F4C430' : '#ddd' }}>
-          ★
-        </span>
+        <span key={i} style={{ color: i < score ? '#F4C430' : '#ddd' }}>★</span>
       ))}
     </span>
   );
@@ -56,28 +61,25 @@ function ScoreStars({ score }: { score: number }) {
 
 // ─── Persona card ─────────────────────────────────────────────────────
 function PersonaCard({
-  personaId,
+  persona,
   diaryMessage,
   cached,
   onCache,
 }: {
-  personaId: PersonaId;
+  persona: AnyPersona;
   diaryMessage: string;
   cached?: string;
-  onCache: (id: PersonaId, text: string) => void;
+  onCache: (id: string, text: string) => void;
 }) {
-  const persona = PERSONA_MAP[personaId];
   const [text, setText] = useState(cached ?? '');
   const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState('');
-  const abortRef = useRef<AbortController | null>(null);
   const [streaming, setStreaming] = useState(!cached);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (cached) {
-      setText(cached);
-      setLoading(false);
-      setStreaming(false);
+      setText(cached); setLoading(false); setStreaming(false);
       return;
     }
 
@@ -87,24 +89,25 @@ function PersonaCard({
 
     const userMsg = `${diaryMessage}\n\n以上是这个人今天的记录，请用你的风格给出点评。`;
 
-    streamClaude(persona.systemPrompt, userMsg, (chunk) => {
+    streamAI(persona.systemPrompt, userMsg, (chunk: string) => {
       accumulated += chunk;
       setText(accumulated);
     }, ac.signal)
       .then(() => {
-        onCache(personaId, accumulated);
+        onCache(persona.id, accumulated);
         setLoading(false);
         setStreaming(false);
       })
-      .catch((err) => {
-        if (err.name !== 'AbortError') {
-          setError(err.message ?? '调用失败');
+      .catch((err: unknown) => {
+        const e = err as Error;
+        if (e.name !== 'AbortError') {
+          setError(e.message ?? '调用失败');
           setLoading(false);
         }
       });
 
     return () => ac.abort();
-  }, [personaId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [persona.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
@@ -116,7 +119,6 @@ function PersonaCard({
         borderLeftColor: persona.color,
       }}
     >
-      {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <span className="font-semibold text-sm" style={{ color: persona.color }}>
           {persona.name}
@@ -132,7 +134,6 @@ function PersonaCard({
         </div>
       </div>
 
-      {/* Content */}
       {error ? (
         <p className="text-xs text-red-500">{error}</p>
       ) : loading && !text ? (
@@ -140,10 +141,7 @@ function PersonaCard({
           <span className="animate-spin">⟳</span> 正在召唤{persona.name}...
         </div>
       ) : (
-        <p
-          className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap"
-          style={{ minHeight: 60 }}
-        >
+        <p className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap" style={{ minHeight: 60 }}>
           {text}
           {streaming && <span className="animate-pulse">▌</span>}
         </p>
@@ -162,7 +160,6 @@ interface AnalysisViewProps {
 export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewProps) {
   const cached = data.analysis;
 
-  // Streaming state
   const [rawText, setRawText] = useState(
     cached
       ? `<diary>${cached.diary}</diary><summary>${JSON.stringify(cached.summary)}</summary><insight>${cached.insight}</insight>`
@@ -174,19 +171,32 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
   const [errorMsg, setErrorMsg] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
-  // Parsed fields from raw stream
-  const parsed = parseStream(rawText);
+  // Goals (loaded once)
+  const [goals] = useState<Goal[]>(() => loadGoals());
+
+  // Custom personas (reloaded on create)
+  const [customPersonas, setCustomPersonas] = useState<CustomPersona[]>(() => loadCustomPersonas());
+  const [showCreator, setShowCreator] = useState(false);
+  const [editingPersona, setEditingPersona] = useState<CustomPersona | undefined>();
+
+  // All personas = presets + custom
+  const allPersonas: AnyPersona[] = [
+    ...PERSONAS.map((p) => ({ ...p, isCustom: false as const })),
+    ...customPersonas.map(toAnyPersona),
+  ];
 
   // Active persona tab
-  const [activePersona, setActivePersona] = useState<PersonaId>('jobs');
+  const [activePersonaId, setActivePersonaId] = useState<string>(PERSONAS[0].id);
 
-  // Persona cache (from data + any new ones fetched this session)
-  const [personaCache, setPersonaCache] = useState<Partial<Record<PersonaId, string>>>(
+  // Persona cache
+  const [personaCache, setPersonaCache] = useState<Record<string, string>>(
     cached?.personas ?? {}
   );
 
-  // Diary message (memoized)
-  const diaryMessage = useRef(buildDiaryMessage(data)).current;
+  // Diary message with goals injected (memoized)
+  const diaryMessage = useRef(buildAnalysisMessage(data, goals)).current;
+
+  const parsed = parseStream(rawText);
 
   // Start analysis
   const startAnalysis = useCallback(async () => {
@@ -199,10 +209,10 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
 
     let accumulated = '';
     try {
-      await streamClaude(
+      await streamAI(
         ANALYSIS_SYSTEM_PROMPT,
         diaryMessage,
-        (chunk) => {
+        (chunk: string) => {
           accumulated += chunk;
           setRawText(accumulated);
         },
@@ -211,7 +221,6 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
 
       setPhase('complete');
 
-      // Persist result
       const finalParsed = parseStream(accumulated);
       const analysis: Analysis = {
         generatedAt: new Date().toISOString(),
@@ -223,9 +232,8 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
       onAnalysisUpdate(analysis);
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') return;
-      const msg = err instanceof Error ? err.message : '未知错误';
       setPhase('error');
-      setErrorMsg(msg);
+      setErrorMsg(err instanceof Error ? err.message : '未知错误');
     }
   }, [diaryMessage, personaCache, onAnalysisUpdate]);
 
@@ -237,20 +245,26 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
 
   // Persist persona cache updates
   const handlePersonaCache = useCallback(
-    (id: PersonaId, text: string) => {
+    (id: string, text: string) => {
       setPersonaCache((prev) => {
         const next = { ...prev, [id]: text };
-        // Persist to diary data
-        if (data.analysis) {
-          onAnalysisUpdate({ ...data.analysis, personas: next });
-        }
+        if (data.analysis) onAnalysisUpdate({ ...data.analysis, personas: next });
         return next;
       });
     },
     [data.analysis, onAnalysisUpdate]
   );
 
-  // Export diary card as image
+  // Delete custom persona
+  const handleDeleteCustomPersona = (id: string) => {
+    const updated = customPersonas.filter((p) => p.id !== id);
+    setCustomPersonas(updated);
+    const { saveCustomPersonas } = require('@/lib/customPersonas');
+    saveCustomPersonas(updated);
+    if (activePersonaId === id) setActivePersonaId(PERSONAS[0].id);
+  };
+
+  // Export diary card
   const diaryCardRef = useRef<HTMLDivElement>(null);
   const handleExport = async () => {
     if (!diaryCardRef.current) return;
@@ -267,27 +281,22 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
   };
 
   const isStreaming = phase === 'streaming';
+  const activePersona = allPersonas.find((p) => p.id === activePersonaId) ?? allPersonas[0];
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-[#E8E4DA] shrink-0">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1 text-sm text-[#1A3A5C] hover:text-[#2a4a6c] transition-colors"
-        >
+        <button onClick={onBack} className="flex items-center gap-1 text-sm text-[#1A3A5C] hover:text-[#2a4a6c] transition-colors">
           ← 返回记录
         </button>
         <div className="flex items-center gap-2">
           {phase === 'complete' && (
-            <button
-              onClick={startAnalysis}
-              className="text-xs text-gray-400 hover:text-gray-600 transition-colors px-2 py-1 rounded hover:bg-gray-100"
-            >
+            <button onClick={startAnalysis} className="text-xs text-gray-400 hover:text-gray-600 transition-colors px-2 py-1 rounded hover:bg-gray-100">
               重新分析
             </button>
           )}
-          <span className="text-xs text-gray-400 tracking-widest">AI 分析</span>
+          <span className="text-xs text-gray-400">{getActiveModel().name}</span>
         </div>
       </div>
 
@@ -298,12 +307,7 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
           <div className="bg-red-50 border border-red-200 rounded-xl p-4">
             <p className="text-sm text-red-600 font-medium mb-1">分析失败</p>
             <p className="text-xs text-red-500">{errorMsg}</p>
-            <button
-              onClick={startAnalysis}
-              className="mt-3 px-4 py-1.5 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-            >
-              重试
-            </button>
+            <button onClick={startAnalysis} className="mt-3 px-4 py-1.5 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">重试</button>
           </div>
         )}
 
@@ -313,95 +317,28 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-gray-700">📔 今天的日记</h3>
               {parsed.diaryDone && (
-                <button
-                  onClick={handleExport}
-                  className="text-xs text-[#1A3A5C] hover:underline"
-                >
-                  导出图片
-                </button>
+                <button onClick={handleExport} className="text-xs text-[#1A3A5C] hover:underline">导出图片</button>
               )}
             </div>
-            <div
-              className="text-sm leading-[1.9] text-gray-700 whitespace-pre-wrap"
-              style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
-            >
+            <div className="text-sm leading-[1.9] text-gray-700 whitespace-pre-wrap" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
               {parsed.diary}
-              {isStreaming && !parsed.diaryDone && (
-                <span className="animate-pulse">▌</span>
-              )}
+              {isStreaming && !parsed.diaryDone && <span className="animate-pulse">▌</span>}
             </div>
           </div>
         )}
 
         {/* Card 2: Summary */}
         {parsed.summary && (
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">📊 今日速览</h3>
-            <div className="space-y-2.5 text-sm">
-              <div className="flex items-start gap-2">
-                <span className="text-gray-400 shrink-0 w-10">心情</span>
-                <span className="text-gray-700">{parsed.summary.mood}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400 shrink-0 w-10">评分</span>
-                <span className="text-gray-700 mr-2">{parsed.summary.score}/10</span>
-                <ScoreStars score={parsed.summary.score} />
-              </div>
-              {parsed.summary.insights.length > 0 && (
-                <div className="flex items-start gap-2">
-                  <span className="text-gray-400 shrink-0 w-10">灵感</span>
-                  <div className="flex flex-wrap gap-1">
-                    {parsed.summary.insights.map((ins, i) => (
-                      <span
-                        key={i}
-                        className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-xs px-2 py-0.5 rounded-full"
-                      >
-                        {ins}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {parsed.summary.gratitude.length > 0 && (
-                <div className="flex items-start gap-2">
-                  <span className="text-gray-400 shrink-0 w-10">感谢</span>
-                  <div className="space-y-0.5">
-                    {parsed.summary.gratitude.map((g, i) => (
-                      <div key={i} className="text-gray-700">
-                        · {g}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {parsed.summary.todos.length > 0 && (
-                <div className="flex items-start gap-2">
-                  <span className="text-gray-400 shrink-0 w-10">待办</span>
-                  <div className="space-y-0.5">
-                    {parsed.summary.todos.map((t, i) => (
-                      <div key={i} className="text-gray-700">
-                        · {t}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          <SummaryCard summary={parsed.summary} hasGoals={goals.some((g) => g.isActive)} />
         )}
 
         {/* Card 3: Insight */}
         {(parsed.insight || (isStreaming && parsed.diaryDone && parsed.summaryDone)) && (
-          <div
-            className="rounded-xl p-4 border-l-4"
-            style={{ backgroundColor: '#EBF2FA', borderLeftColor: '#1A3A5C' }}
-          >
+          <div className="rounded-xl p-4 border-l-4" style={{ backgroundColor: '#EBF2FA', borderLeftColor: '#1A3A5C' }}>
             <h3 className="text-sm font-semibold text-gray-700 mb-2">💡 今日洞察</h3>
             <p className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">
               {parsed.insight}
-              {isStreaming && !parsed.insightDone && (
-                <span className="animate-pulse">▌</span>
-              )}
+              {isStreaming && !parsed.insightDone && <span className="animate-pulse">▌</span>}
             </p>
           </div>
         )}
@@ -414,41 +351,146 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
           </div>
         )}
 
-        {/* Persona section — only show when analysis complete */}
+        {/* Persona section */}
         {phase === 'complete' && parsed.insightDone && (
           <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">🎭 大佬视角点评</h3>
 
-            {/* Persona tabs */}
-            <div className="flex gap-1 mb-4 overflow-x-auto pb-1">
-              {PERSONAS.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setActivePersona(p.id)}
-                  className="px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap shrink-0"
-                  style={{
-                    backgroundColor:
-                      activePersona === p.id ? p.color : 'transparent',
-                    color: activePersona === p.id ? '#fff' : p.color,
-                    border: `1.5px solid ${p.color}`,
-                  }}
-                >
-                  {p.name}
-                </button>
+            {/* Tabs */}
+            <div className="flex gap-1 mb-4 overflow-x-auto pb-1 flex-wrap">
+              {allPersonas.map((p) => (
+                <div key={p.id} className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => setActivePersonaId(p.id)}
+                    className="px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap shrink-0"
+                    style={{
+                      backgroundColor: activePersonaId === p.id ? p.color : 'transparent',
+                      color: activePersonaId === p.id ? '#fff' : p.color,
+                      border: `1.5px solid ${p.color}`,
+                    }}
+                  >
+                    {p.name}
+                  </button>
+                  {p.isCustom && (
+                    <button
+                      onClick={() => {
+                        const cp = customPersonas.find((c) => c.id === p.id);
+                        setEditingPersona(cp);
+                        setShowCreator(true);
+                      }}
+                      className="text-[10px] text-gray-400 hover:text-gray-600 px-0.5"
+                      title="编辑"
+                    >
+                      ✏️
+                    </button>
+                  )}
+                </div>
               ))}
+
+              {/* Add custom */}
+              <button
+                onClick={() => { setEditingPersona(undefined); setShowCreator(true); }}
+                className="px-2.5 py-1.5 rounded-full text-xs text-gray-400 border border-dashed border-gray-300 hover:border-gray-400 hover:text-gray-500 transition-colors whitespace-nowrap shrink-0"
+              >
+                + 自定义
+              </button>
             </div>
 
             {/* Active persona card */}
-            <PersonaCard
-              key={activePersona}
-              personaId={activePersona}
-              diaryMessage={diaryMessage}
-              cached={personaCache[activePersona]}
-              onCache={handlePersonaCache}
-            />
+            {activePersona && (
+              <PersonaCard
+                key={activePersonaId}
+                persona={activePersona}
+                diaryMessage={diaryMessage}
+                cached={personaCache[activePersonaId]}
+                onCache={handlePersonaCache}
+              />
+            )}
+
+            {/* Delete button for custom personas */}
+            {activePersona?.isCustom && (
+              <button
+                onClick={() => handleDeleteCustomPersona(activePersonaId)}
+                className="mt-2 text-xs text-red-400 hover:text-red-600 transition-colors"
+              >
+                删除此视角
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      {/* Custom persona creator */}
+      {showCreator && (
+        <PersonaCreatorModal
+          editPersona={editingPersona}
+          onClose={() => { setShowCreator(false); setEditingPersona(undefined); }}
+          onChange={() => setCustomPersonas(loadCustomPersonas())}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Summary card ─────────────────────────────────────────────────────
+function SummaryCard({ summary, hasGoals }: { summary: AnalysisSummary; hasGoals: boolean }) {
+  return (
+    <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+      <h3 className="text-sm font-semibold text-gray-700 mb-3">📊 今日速览</h3>
+      <div className="space-y-2.5 text-sm">
+        <div className="flex items-start gap-2">
+          <span className="text-gray-400 shrink-0 w-10">心情</span>
+          <span className="text-gray-700">{summary.mood}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-400 shrink-0 w-10">评分</span>
+          <span className="text-gray-700 mr-2">{summary.score}/10</span>
+          <ScoreStars score={summary.score} />
+        </div>
+        {hasGoals && summary.goalAlignment != null && (
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400 shrink-0 w-10">目标</span>
+            <span className="text-gray-700 mr-2">对齐 {summary.goalAlignment}/10</span>
+            <GoalBar score={summary.goalAlignment} />
+          </div>
+        )}
+        {summary.insights.length > 0 && (
+          <div className="flex items-start gap-2">
+            <span className="text-gray-400 shrink-0 w-10">灵感</span>
+            <div className="flex flex-wrap gap-1">
+              {summary.insights.map((ins, i) => (
+                <span key={i} className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-xs px-2 py-0.5 rounded-full">{ins}</span>
+              ))}
+            </div>
+          </div>
+        )}
+        {summary.gratitude.length > 0 && (
+          <div className="flex items-start gap-2">
+            <span className="text-gray-400 shrink-0 w-10">感谢</span>
+            <div className="space-y-0.5">
+              {summary.gratitude.map((g, i) => <div key={i} className="text-gray-700">· {g}</div>)}
+            </div>
+          </div>
+        )}
+        {summary.todos.length > 0 && (
+          <div className="flex items-start gap-2">
+            <span className="text-gray-400 shrink-0 w-10">待办</span>
+            <div className="space-y-0.5">
+              {summary.todos.map((t, i) => <div key={i} className="text-gray-700">· {t}</div>)}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GoalBar({ score }: { score: number }) {
+  const pct = (score / 10) * 100;
+  const color = score >= 7 ? '#22c55e' : score >= 4 ? '#f59e0b' : '#ef4444';
+  return (
+    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-[80px]">
+      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
     </div>
   );
 }

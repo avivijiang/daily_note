@@ -1,14 +1,17 @@
 'use client';
 
 import { formatDate, getWeekDays, addDays, todayStr } from '@/lib/utils';
+import Link from 'next/link';
 
 interface HeaderProps {
   currentDate: string;
   onDateChange: (date: string) => void;
   onSettingsClick: () => void;
+  onGoalsClick: () => void;
+  activeModelName?: string;
 }
 
-export function Header({ currentDate, onDateChange, onSettingsClick }: HeaderProps) {
+export function Header({ currentDate, onDateChange, onSettingsClick, onGoalsClick, activeModelName }: HeaderProps) {
   const weekDays = getWeekDays(currentDate);
   const today = todayStr();
   const isToday = currentDate === today;
@@ -46,7 +49,7 @@ export function Header({ currentDate, onDateChange, onSettingsClick }: HeaderPro
           })}
         </div>
 
-        {/* Navigation controls */}
+        {/* Controls */}
         <div className="flex items-center gap-1 shrink-0">
           {!isToday && (
             <button
@@ -70,13 +73,37 @@ export function Header({ currentDate, onDateChange, onSettingsClick }: HeaderPro
           >
             ›
           </button>
-          {/* Settings gear */}
+
+          {/* Goals */}
+          <button
+            onClick={onGoalsClick}
+            className="w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-200 transition-colors text-sm"
+            title="我的目标"
+          >
+            🎯
+          </button>
+
+          {/* History */}
+          <Link
+            href="/history"
+            className="w-7 h-7 flex items-center justify-center rounded-full text-gray-500 hover:bg-gray-200 transition-colors text-sm"
+            title="历史记录"
+          >
+            📅
+          </Link>
+
+          {/* Model badge + settings */}
           <button
             onClick={onSettingsClick}
-            className="w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors text-sm"
-            title="API Key 设置"
+            className="flex items-center gap-1 px-2 py-1 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+            title="AI 模型设置"
           >
-            ⚙
+            {activeModelName && (
+              <span className="text-[10px] font-medium text-[#1A3A5C]/70 hidden sm:inline">
+                {activeModelName}
+              </span>
+            )}
+            <span className="text-sm">⚙</span>
           </button>
         </div>
       </div>

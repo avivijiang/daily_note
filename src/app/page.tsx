@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Analysis, DiaryData, DiaryEvent } from '@/lib/types';
 import { todayStr, currentTimeStr, addDays, generateId } from '@/lib/utils';
 import { loadDiary, saveDiary } from '@/lib/storage';
-import { getApiKey } from '@/lib/claude';
+import { getActiveModel, hasORKey } from '@/lib/ai';
 import { Header } from '@/components/Header';
 import { TimelinePanel } from '@/components/TimelinePanel';
 import { EventDialog } from '@/components/EventDialog';
@@ -12,39 +12,41 @@ import { NotesPanel } from '@/components/NotesPanel';
 import { AnalysisView } from '@/components/AnalysisView';
 import { OpeningQuote } from '@/components/OpeningQuote';
 import { SealAnimation } from '@/components/SealAnimation';
-import { ApiKeyModal } from '@/components/ApiKeyModal';
+import { ModelSettingsModal } from '@/components/ModelSettingsModal';
+import { GoalPanel } from '@/components/GoalPanel';
 
-// Track which dates have shown the opening quote this session
 const shownQuoteDates = new Set<string>();
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
   const [currentDate, setCurrentDate] = useState(todayStr);
   const [diaryData, setDiaryData] = useState<DiaryData>(() => loadDiary(todayStr()));
-
-  // View: 'notes' | 'analysis'
   const [rightView, setRightView] = useState<'notes' | 'analysis'>('notes');
 
-  // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<DiaryEvent | undefined>();
   const [defaultStartTime, setDefaultStartTime] = useState('');
 
-  // Overlay states
   const [showSeal, setShowSeal] = useState(false);
   const [showQuote, setShowQuote] = useState(false);
-  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-  const [apiKeyModalMode, setApiKeyModalMode] = useState<'setup' | 'settings'>('setup');
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsHint, setSettingsHint] = useState<string | undefined>();
+  const [showGoals, setShowGoals] = useState(false);
 
-  // ── Load diary + carry-over todos when date changes ──
+  const [activeModelName, setActiveModelName] = useState('');
+
   useEffect(() => {
+    setMounted(true);
+    setActiveModelName(getActiveModel().name);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
     const data = loadDiary(currentDate);
 
-    // Carry undone todos from yesterday
     const yesterday = addDays(currentDate, -1);
     const yesterdayData = loadDiary(yesterday);
-    const undone = yesterdayData.todos.filter(
-      (t) => !t.done && t.text.trim()
-    );
+    const undone = yesterdayData.todos.filter((t) => !t.done && t.text.trim());
     if (undone.length > 0) {
       const existingTexts = new Set(data.todos.map((t) => t.text.trim()));
       const toCarry = undone.filter((t) => !existingTexts.has(t.text.trim()));
@@ -63,20 +65,17 @@ export default function Home() {
     setDiaryData(data);
     setRightView('notes');
 
-    // Show opening quote once per date per session
     if (!shownQuoteDates.has(currentDate)) {
       shownQuoteDates.add(currentDate);
       setShowQuote(true);
     }
-  }, [currentDate]);
+  }, [currentDate, mounted]);
 
-  // ── Save ──
   const updateDiary = useCallback((data: DiaryData) => {
     setDiaryData(data);
     saveDiary(data);
   }, []);
 
-  // ── Event handlers ──
   const openAddDialog = (startTime: string) => {
     setEditingEvent(undefined);
     setDefaultStartTime(startTime);
@@ -101,11 +100,10 @@ export default function Home() {
     updateDiary({ ...diaryData, events: diaryData.events.filter((e) => e.id !== id) });
   };
 
-  // ── End record → show seal → switch to analysis ──
   const handleEndRecord = () => {
-    if (!getApiKey()) {
-      setApiKeyModalMode('setup');
-      setShowApiKeyModal(true);
+    if (!hasORKey()) {
+      setSettingsHint('请先填入 OpenRouter API Key 才能开始分析');
+      setShowSettings(true);
       return;
     }
     setShowSeal(true);
@@ -116,7 +114,6 @@ export default function Home() {
     setRightView('analysis');
   };
 
-  // ── Analysis update (persist) ──
   const handleAnalysisUpdate = useCallback(
     (analysis: Analysis) => {
       const updated = { ...diaryData, analysis };
@@ -126,22 +123,41 @@ export default function Home() {
     [diaryData]
   );
 
+  const handleSettingsSaved = () => {
+    setActiveModelName(getActiveModel().name);
+    setSettingsHint(undefined);
+  };
+
+  // Cache AI greeting into today's diary
+  const handleGreetingGenerated = useCallback((text: string) => {
+    const today = todayStr();
+    if (currentDate !== today) return;
+    const data = loadDiary(today);
+    if (!data.greeting) {
+      const updated = { ...data, greeting: text };
+      setDiaryData((prev) => prev.date === today ? { ...prev, greeting: text } : prev);
+      saveDiary(updated);
+    }
+  }, [currentDate]);
+
+  if (!mounted) {
+    return <div style={{ backgroundColor: '#FAF8F3', minHeight: '100vh' }} />;
+  }
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FAF8F3' }}>
       <Header
         currentDate={currentDate}
         onDateChange={setCurrentDate}
-        onSettingsClick={() => {
-          setApiKeyModalMode('settings');
-          setShowApiKeyModal(true);
-        }}
+        onSettingsClick={() => { setSettingsHint(undefined); setShowSettings(true); }}
+        onGoalsClick={() => setShowGoals(true)}
+        activeModelName={activeModelName}
       />
 
       <main
         className="max-w-[1200px] mx-auto flex flex-col md:flex-row"
         style={{ height: 'calc(100vh - 56px)', marginTop: 56 }}
       >
-        {/* Left: Timeline 60% */}
         <section
           className="md:w-[60%] w-full flex flex-col overflow-hidden border-b md:border-b-0 md:border-r border-[#E8E4DA]"
           style={{ minHeight: 400 }}
@@ -157,7 +173,6 @@ export default function Home() {
           />
         </section>
 
-        {/* Right: Notes or Analysis 40% */}
         <section className="md:w-[40%] w-full flex flex-col overflow-hidden">
           <div className="px-4 py-2 border-b border-[#E8E4DA] shrink-0">
             <h2 className="text-xs font-medium text-gray-400 tracking-widest">
@@ -182,7 +197,6 @@ export default function Home() {
         </section>
       </main>
 
-      {/* Event dialog */}
       <EventDialog
         isOpen={dialogOpen}
         onClose={() => setDialogOpen(false)}
@@ -192,24 +206,28 @@ export default function Home() {
         defaultStartTime={defaultStartTime}
       />
 
-      {/* Opening quote */}
-      {showQuote && <OpeningQuote onDismiss={() => setShowQuote(false)} />}
+      {showQuote && (
+        <OpeningQuote
+          onDismiss={() => setShowQuote(false)}
+          onGreetingGenerated={handleGreetingGenerated}
+          cachedGreeting={diaryData.greeting}
+        />
+      )}
 
-      {/* Seal animation */}
       {showSeal && <SealAnimation onComplete={handleSealComplete} />}
 
-      {/* API Key modal */}
-      {showApiKeyModal && (
-        <ApiKeyModal
-          mode={apiKeyModalMode}
-          onSave={() => {
-            setShowApiKeyModal(false);
-            if (apiKeyModalMode === 'setup') {
-              // Retry end record after key saved
-              setShowSeal(true);
-            }
-          }}
-          onCancel={() => setShowApiKeyModal(false)}
+      {showSettings && (
+        <ModelSettingsModal
+          hint={settingsHint}
+          onClose={() => { setShowSettings(false); setSettingsHint(undefined); }}
+          onSaved={handleSettingsSaved}
+        />
+      )}
+
+      {showGoals && (
+        <GoalPanel
+          onClose={() => setShowGoals(false)}
+          onChange={() => {/* goals are read fresh on analysis start */}}
         />
       )}
     </div>
