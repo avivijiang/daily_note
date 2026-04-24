@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Analysis, AnalysisSummary, DiaryData, PersonaId } from '@/lib/types';
 import {
-  streamClaude,
   buildDiaryMessage,
   ANALYSIS_SYSTEM_PROMPT,
   parseStream,
 } from '@/lib/claude';
+import { streamAI, getActiveProvider } from '@/lib/ai';
 import { PERSONAS, PERSONA_MAP } from '@/lib/personas';
 
 // ─── Typewriter hook ────────────────────────────────────────────────
@@ -87,7 +87,7 @@ function PersonaCard({
 
     const userMsg = `${diaryMessage}\n\n以上是这个人今天的记录，请用你的风格给出点评。`;
 
-    streamClaude(persona.systemPrompt, userMsg, (chunk) => {
+    streamAI(persona.systemPrompt, userMsg, (chunk) => {
       accumulated += chunk;
       setText(accumulated);
     }, ac.signal)
@@ -199,7 +199,7 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
 
     let accumulated = '';
     try {
-      await streamClaude(
+      await streamAI(
         ANALYSIS_SYSTEM_PROMPT,
         diaryMessage,
         (chunk) => {
@@ -215,6 +215,7 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
       const finalParsed = parseStream(accumulated);
       const analysis: Analysis = {
         generatedAt: new Date().toISOString(),
+        modelUsed: getActiveProvider().name,
         diary: finalParsed.diary,
         summary: finalParsed.summary,
         insight: finalParsed.insight,

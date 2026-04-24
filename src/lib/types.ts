@@ -30,6 +30,7 @@ export interface AnalysisSummary {
 
 export interface Analysis {
   generatedAt: string;
+  modelUsed?: string;
   diary: string;
   summary: AnalysisSummary | null;
   insight: string;

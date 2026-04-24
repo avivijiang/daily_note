@@ -6,9 +6,15 @@ interface HeaderProps {
   currentDate: string;
   onDateChange: (date: string) => void;
   onSettingsClick: () => void;
+  activeModelName?: string;
 }
 
-export function Header({ currentDate, onDateChange, onSettingsClick }: HeaderProps) {
+export function Header({
+  currentDate,
+  onDateChange,
+  onSettingsClick,
+  activeModelName,
+}: HeaderProps) {
   const weekDays = getWeekDays(currentDate);
   const today = todayStr();
   const isToday = currentDate === today;
@@ -46,7 +52,7 @@ export function Header({ currentDate, onDateChange, onSettingsClick }: HeaderPro
           })}
         </div>
 
-        {/* Navigation controls */}
+        {/* Navigation + model badge */}
         <div className="flex items-center gap-1 shrink-0">
           {!isToday && (
             <button
@@ -70,13 +76,19 @@ export function Header({ currentDate, onDateChange, onSettingsClick }: HeaderPro
           >
             ›
           </button>
-          {/* Settings gear */}
+
+          {/* Model badge + settings */}
           <button
             onClick={onSettingsClick}
-            className="w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors text-sm"
-            title="API Key 设置"
+            className="flex items-center gap-1 px-2 py-1 rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+            title="AI 模型设置"
           >
-            ⚙
+            {activeModelName && (
+              <span className="text-[10px] font-medium text-[#1A3A5C]/70 hidden sm:inline">
+                {activeModelName}
+              </span>
+            )}
+            <span className="text-sm">⚙</span>
           </button>
         </div>
       </div>

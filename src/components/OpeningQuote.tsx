@@ -30,10 +30,12 @@ interface OpeningQuoteProps {
 }
 
 export function OpeningQuote({ onDismiss }: OpeningQuoteProps) {
-  const [quote] = useState(
-    () => QUOTES[Math.floor(Math.random() * QUOTES.length)]
-  );
+  const [quote, setQuote] = useState('');
   const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    setQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)]);
+  }, []);
 
   useEffect(() => {
     const hideTimer = setTimeout(() => setVisible(false), 2000);
@@ -43,6 +45,8 @@ export function OpeningQuote({ onDismiss }: OpeningQuoteProps) {
       clearTimeout(dismissTimer);
     };
   }, [onDismiss]);
+
+  if (!quote) return null;
 
   return (
     <div

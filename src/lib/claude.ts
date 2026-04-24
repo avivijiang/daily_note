@@ -1,94 +1,11 @@
-import { DiaryData, Analysis, AnalysisSummary } from './types';
+/** Analysis-specific utilities: data building, system prompt, XML parsing */
+
+import { DiaryData, AnalysisSummary } from './types';
 import { getDuration } from './utils';
 
-export const API_KEY_STORAGE = 'claude_api_key';
+// Re-export streamAI as the streaming entry point for analysis
+export { streamAI as streamClaude } from './ai';
 
-export function getApiKey(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem(API_KEY_STORAGE);
-}
-
-export function saveApiKey(key: string): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(API_KEY_STORAGE, key.trim());
-}
-
-export function clearApiKey(): void {
-  if (typeof window === 'undefined') return;
-  localStorage.removeItem(API_KEY_STORAGE);
-}
-
-/** Stream Claude API with SSE, calling onChunk for each text delta */
-export async function streamClaude(
-  systemPrompt: string,
-  userMessage: string,
-  onChunk: (chunk: string) => void,
-  signal?: AbortSignal
-): Promise<void> {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error('NO_API_KEY');
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    signal,
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-5-20251001',
-      max_tokens: 2000,
-      stream: true,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    let msg = `API 错误 ${response.status}`;
-    try {
-      const json = JSON.parse(errText);
-      msg = json.error?.message ?? msg;
-    } catch {
-      // ignore
-    }
-    throw new Error(msg);
-  }
-
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const raw = line.slice(6).trim();
-      if (raw === '[DONE]') return;
-      try {
-        const json = JSON.parse(raw);
-        if (
-          json.type === 'content_block_delta' &&
-          json.delta?.type === 'text_delta'
-        ) {
-          const chunk: string = json.delta.text ?? '';
-          if (chunk) onChunk(chunk);
-        }
-      } catch {
-        // ignore malformed SSE lines
-      }
-    }
-  }
-}
-
-/** Build the user message from diary data */
 export function buildDiaryMessage(data: DiaryData): string {
   const lines: string[] = [];
   lines.push(`今天是 ${data.date}，以下是我今天的记录：`);
@@ -159,7 +76,6 @@ score 是 AI 对今天整体状态的评分（1-10），结合心情、完成度
 长度 150-250 字。
 </insight>`;
 
-/** Extract content between XML tags from accumulated text */
 export function extractTag(
   text: string,
   tag: string
@@ -174,7 +90,6 @@ export function extractTag(
   return { content: text.slice(cs, ei), complete: true };
 }
 
-/** Parse accumulated stream text into analysis fields */
 export function parseStream(raw: string): {
   diary: string;
   diaryDone: boolean;
@@ -192,7 +107,7 @@ export function parseStream(raw: string): {
     try {
       summary = JSON.parse(summaryResult.content.trim()) as AnalysisSummary;
     } catch {
-      // ignore parse errors while streaming
+      // still streaming / malformed
     }
   }
 

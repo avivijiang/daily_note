@@ -4,7 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Analysis, DiaryData, DiaryEvent } from '@/lib/types';
 import { todayStr, currentTimeStr, addDays, generateId } from '@/lib/utils';
 import { loadDiary, saveDiary } from '@/lib/storage';
-import { getApiKey } from '@/lib/claude';
+import {
+  getActiveModel,
+  hasORKey,
+} from '@/lib/ai';
 import { Header } from '@/components/Header';
 import { TimelinePanel } from '@/components/TimelinePanel';
 import { EventDialog } from '@/components/EventDialog';
@@ -12,12 +15,13 @@ import { NotesPanel } from '@/components/NotesPanel';
 import { AnalysisView } from '@/components/AnalysisView';
 import { OpeningQuote } from '@/components/OpeningQuote';
 import { SealAnimation } from '@/components/SealAnimation';
-import { ApiKeyModal } from '@/components/ApiKeyModal';
+import { ModelSettingsModal } from '@/components/ModelSettingsModal';
 
 // Track which dates have shown the opening quote this session
 const shownQuoteDates = new Set<string>();
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
   const [currentDate, setCurrentDate] = useState(todayStr);
   const [diaryData, setDiaryData] = useState<DiaryData>(() => loadDiary(todayStr()));
 
@@ -32,19 +36,27 @@ export default function Home() {
   // Overlay states
   const [showSeal, setShowSeal] = useState(false);
   const [showQuote, setShowQuote] = useState(false);
-  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-  const [apiKeyModalMode, setApiKeyModalMode] = useState<'setup' | 'settings'>('setup');
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsHint, setSettingsHint] = useState<string | undefined>();
+
+  // Active model name for Header badge
+  const [activeModelName, setActiveModelName] = useState('');
+
+  // Avoid SSR/client hydration mismatch (localStorage only exists on client)
+  useEffect(() => {
+    setMounted(true);
+    setActiveModelName(getActiveModel().name);
+  }, []);
 
   // ── Load diary + carry-over todos when date changes ──
   useEffect(() => {
+    if (!mounted) return;
     const data = loadDiary(currentDate);
 
     // Carry undone todos from yesterday
     const yesterday = addDays(currentDate, -1);
     const yesterdayData = loadDiary(yesterday);
-    const undone = yesterdayData.todos.filter(
-      (t) => !t.done && t.text.trim()
-    );
+    const undone = yesterdayData.todos.filter((t) => !t.done && t.text.trim());
     if (undone.length > 0) {
       const existingTexts = new Set(data.todos.map((t) => t.text.trim()));
       const toCarry = undone.filter((t) => !existingTexts.has(t.text.trim()));
@@ -68,7 +80,7 @@ export default function Home() {
       shownQuoteDates.add(currentDate);
       setShowQuote(true);
     }
-  }, [currentDate]);
+  }, [currentDate, mounted]);
 
   // ── Save ──
   const updateDiary = useCallback((data: DiaryData) => {
@@ -76,7 +88,7 @@ export default function Home() {
     saveDiary(data);
   }, []);
 
-  // ── Event handlers ──
+  // ── Timeline event handlers ──
   const openAddDialog = (startTime: string) => {
     setEditingEvent(undefined);
     setDefaultStartTime(startTime);
@@ -101,11 +113,11 @@ export default function Home() {
     updateDiary({ ...diaryData, events: diaryData.events.filter((e) => e.id !== id) });
   };
 
-  // ── End record → show seal → switch to analysis ──
+  // ── End record → check key → seal → analysis ──
   const handleEndRecord = () => {
-    if (!getApiKey()) {
-      setApiKeyModalMode('setup');
-      setShowApiKeyModal(true);
+    if (!hasORKey()) {
+      setSettingsHint('请先填入 OpenRouter API Key 才能开始分析');
+      setShowSettings(true);
       return;
     }
     setShowSeal(true);
@@ -126,15 +138,27 @@ export default function Home() {
     [diaryData]
   );
 
+  // ── Settings saved ──
+  const handleSettingsSaved = () => {
+    setActiveModelName(getActiveModel().name);
+    setSettingsHint(undefined);
+  };
+
+  // Render blank shell during SSR
+  if (!mounted) {
+    return <div style={{ backgroundColor: '#FAF8F3', minHeight: '100vh' }} />;
+  }
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FAF8F3' }}>
       <Header
         currentDate={currentDate}
         onDateChange={setCurrentDate}
         onSettingsClick={() => {
-          setApiKeyModalMode('settings');
-          setShowApiKeyModal(true);
+          setSettingsHint(undefined);
+          setShowSettings(true);
         }}
+        activeModelName={activeModelName}
       />
 
       <main
@@ -198,18 +222,15 @@ export default function Home() {
       {/* Seal animation */}
       {showSeal && <SealAnimation onComplete={handleSealComplete} />}
 
-      {/* API Key modal */}
-      {showApiKeyModal && (
-        <ApiKeyModal
-          mode={apiKeyModalMode}
-          onSave={() => {
-            setShowApiKeyModal(false);
-            if (apiKeyModalMode === 'setup') {
-              // Retry end record after key saved
-              setShowSeal(true);
-            }
+      {/* Model settings modal */}
+      {showSettings && (
+        <ModelSettingsModal
+          hint={settingsHint}
+          onClose={() => {
+            setShowSettings(false);
+            setSettingsHint(undefined);
           }}
-          onCancel={() => setShowApiKeyModal(false)}
+          onSaved={handleSettingsSaved}
         />
       )}
     </div>
