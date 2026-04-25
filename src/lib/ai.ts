@@ -60,17 +60,23 @@ export function getActiveModel(): ModelConfig {
   return MODEL_LIST.find((m) => m.id === id) ?? MODEL_LIST[0];
 }
 
-// ── Stream call (via /api/ai proxy) ──────────────────────────────────
+// ── Chat message type ─────────────────────────────────────────────────
 
-export async function streamAI(
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+// ── Shared fetch helper ───────────────────────────────────────────────
+
+async function streamFromAPI(
   systemPrompt: string,
-  userMessage: string,
+  messages: ChatMessage[],
   onChunk: (chunk: string) => void,
   signal?: AbortSignal
 ): Promise<void> {
   const apiKey = getORKey();
   if (!apiKey) throw new Error('请先在设置中填入 OpenRouter API Key');
-
   const modelId = getActiveModelId();
 
   let response: Response;
@@ -83,7 +89,7 @@ export async function streamAI(
         'X-Api-Key': apiKey,
         'X-Model-Id': modelId,
       },
-      body: JSON.stringify({ system: systemPrompt, userMessage }),
+      body: JSON.stringify({ system: systemPrompt, messages }),
     });
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
@@ -99,14 +105,39 @@ export async function streamAI(
     throw new Error(`请求失败（${status}），请稍后再试`);
   }
 
-  // toTextStreamResponse() streams raw text
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
-
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     const text = decoder.decode(value, { stream: true });
     if (text) onChunk(text);
   }
+}
+
+// ── Stream call (via /api/ai proxy) ──────────────────────────────────
+
+export async function streamAI(
+  systemPrompt: string,
+  userMessage: string,
+  onChunk: (chunk: string) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  return streamFromAPI(
+    systemPrompt,
+    [{ role: 'user', content: userMessage }],
+    onChunk,
+    signal
+  );
+}
+
+// ── Multi-turn chat stream ─────────────────────────────────────────────
+
+export async function streamAIChat(
+  systemPrompt: string,
+  messages: ChatMessage[],
+  onChunk: (chunk: string) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  return streamFromAPI(systemPrompt, messages, onChunk, signal);
 }

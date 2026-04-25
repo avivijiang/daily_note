@@ -8,23 +8,34 @@ interface HeaderProps {
   onDateChange: (date: string) => void;
   onSettingsClick: () => void;
   onGoalsClick: () => void;
+  onLogoClick?: () => void;
   activeModelName?: string;
 }
 
-export function Header({ currentDate, onDateChange, onSettingsClick, onGoalsClick, activeModelName }: HeaderProps) {
+export function Header({ currentDate, onDateChange, onSettingsClick, onGoalsClick, onLogoClick, activeModelName }: HeaderProps) {
   const weekDays = getWeekDays(currentDate);
   const today = todayStr();
   const isToday = currentDate === today;
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-40 bg-[#FAF8F3] border-b border-[#E8E4DA] shadow-sm">
+    <header className="sticky top-0 left-0 right-0 z-40 bg-[#FAF8F3] border-b border-[#E8E4DA] shadow-sm shrink-0">
       <div className="max-w-[1200px] mx-auto px-4 h-14 flex items-center gap-4">
-        {/* Date title */}
-        <div
-          className="text-base font-semibold text-[#1A3A5C] whitespace-nowrap shrink-0"
-          style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
-        >
-          {formatDate(currentDate)}
+        {/* Groundhog logo + date title */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={onLogoClick}
+            title="点击土拨鼠"
+            className="w-8 h-8 flex items-center justify-center hover:scale-110 transition-transform"
+            style={{ fontSize: 22 }}
+          >
+            🦫
+          </button>
+          <div
+            className="text-base font-semibold text-[#1A3A5C] whitespace-nowrap"
+            style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
+          >
+            {formatDate(currentDate)}
+          </div>
         </div>
 
         {/* Week strip */}

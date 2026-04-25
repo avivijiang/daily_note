@@ -111,8 +111,8 @@ export function currentTimeStr(): string {
 
 // Timeline layout constants
 export const TIMELINE_START_HOUR = 6;
-export const TIMELINE_END_HOUR = 23;
-export const HOUR_HEIGHT = 64; // px per hour (= 1px per minute * 60, rounded)
+export const TIMELINE_END_HOUR = 24;   // inclusive end — grid shows up to 00:00 (midnight)
+export const HOUR_HEIGHT = 64; // px per hour
 export const LABEL_WIDTH = 64; // px for time label column
 
 export function timeToY(time: string): number {
@@ -123,12 +123,19 @@ export function timeToY(time: string): number {
 export function yToTime(y: number): string {
   const totalMinutes = Math.round(y / (HOUR_HEIGHT / 60)) + TIMELINE_START_HOUR * 60;
   const startMin = TIMELINE_START_HOUR * 60;
-  const endMin = TIMELINE_END_HOUR * 60;
+  const endMin = TIMELINE_END_HOUR * 60;        // 24 * 60 = 1440
   const clamped = Math.max(startMin, Math.min(endMin, totalMinutes));
   // Snap to 15-minute intervals
   const snapped = Math.round(clamped / 15) * 15;
-  const h = Math.floor(snapped / 60);
+  const h = Math.floor(snapped / 60) % 24;      // 24 → 0
   const m = snapped % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+export function minutesToTime(totalMin: number): string {
+  const clamped = Math.max(TIMELINE_START_HOUR * 60, Math.min(TIMELINE_END_HOUR * 60, totalMin));
+  const h = Math.floor(clamped / 60) % 24;   // 1440 min → 00:00
+  const m = clamped % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 

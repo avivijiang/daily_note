@@ -1,10 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Analysis, DiaryData, DiaryEvent } from '@/lib/types';
 import { todayStr, currentTimeStr, addDays, generateId } from '@/lib/utils';
 import { loadDiary, saveDiary } from '@/lib/storage';
 import { getActiveModel, hasORKey } from '@/lib/ai';
+import {
+  calcStreak, daysSinceLastOpen,
+  loadGroundhogState, saveGroundhogState,
+  QUOTES,
+} from '@/lib/groundhog';
 import { Header } from '@/components/Header';
 import { TimelinePanel } from '@/components/TimelinePanel';
 import { EventDialog } from '@/components/EventDialog';
@@ -14,6 +19,9 @@ import { OpeningQuote } from '@/components/OpeningQuote';
 import { SealAnimation } from '@/components/SealAnimation';
 import { ModelSettingsModal } from '@/components/ModelSettingsModal';
 import { GoalPanel } from '@/components/GoalPanel';
+import { Groundhog } from '@/components/Groundhog';
+import { MusicPlayer } from '@/components/MusicPlayer';
+import { MeditationMode } from '@/components/MeditationMode';
 
 const shownQuoteDates = new Set<string>();
 
@@ -32,13 +40,58 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsHint, setSettingsHint] = useState<string | undefined>();
   const [showGoals, setShowGoals] = useState(false);
+  const [showMeditation, setShowMeditation] = useState(false);
 
   const [activeModelName, setActiveModelName] = useState('');
+
+  // Groundhog state
+  const [ghEmotion, setGhEmotion] = useState<import('@/lib/groundhog').GroundhogEmotion>('idle');
+  const [ghBubble, setGhBubble] = useState('');
+  const ghBubbleKeyRef = useRef(0);
+
+  const showGhBubble = useCallback((text: string, emotion: import('@/lib/groundhog').GroundhogEmotion = 'happy') => {
+    ghBubbleKeyRef.current += 1;
+    setGhEmotion(emotion);
+    setGhBubble(text + '\u200B'.repeat(ghBubbleKeyRef.current));
+    // hide groundhog after bubble fades
+    setTimeout(() => { setGhEmotion('idle'); setGhBubble(''); }, 3500);
+  }, []);
 
   useEffect(() => {
     setMounted(true);
     setActiveModelName(getActiveModel().name);
   }, []);
+
+  // Groundhog streak / miss triggers (run once after mount)
+  useEffect(() => {
+    if (!mounted) return;
+    const today = todayStr();
+    const ghState = loadGroundhogState();
+
+    const streak = calcStreak(today);
+    const missedDays = ghState.lastOpenDate ? daysSinceLastOpen(ghState.lastOpenDate) : 0;
+
+    // Update streak & lastOpenDate
+    saveGroundhogState({ ...ghState, streakDays: streak, lastOpenDate: today });
+
+    // Trigger quote based on streak / miss
+    let quote: string | undefined;
+    if (streak === 0 && missedDays >= 3) {
+      quote = QUOTES.find((q) => q.trigger === 'missed_3days')?.text;
+    } else if (streak >= 7) {
+      quote = QUOTES.find((q) => q.trigger === 'streak_7')?.text;
+    } else if (streak >= 3) {
+      quote = QUOTES.find((q) => q.trigger === 'streak_3')?.text;
+    } else if (!ghState.lastOpenDate) {
+      quote = QUOTES.find((q) => q.trigger === 'first_open')?.text;
+    }
+
+    if (quote) {
+      const emotion = streak > 0 ? 'happy' : missedDays >= 3 ? 'sad' : 'waving';
+      setTimeout(() => showGhBubble(quote!, emotion), 1500);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -100,6 +153,16 @@ export default function Home() {
     updateDiary({ ...diaryData, events: diaryData.events.filter((e) => e.id !== id) });
   };
 
+  const handleResizeEvent = useCallback(
+    (id: string, patch: { startTime?: string; endTime?: string }) => {
+      const events = diaryData.events.map((e) =>
+        e.id === id ? { ...e, ...patch } : e
+      );
+      updateDiary({ ...diaryData, events });
+    },
+    [diaryData, updateDiary]
+  );
+
   const handleEndRecord = () => {
     if (!hasORKey()) {
       setSettingsHint('请先填入 OpenRouter API Key 才能开始分析');
@@ -112,6 +175,12 @@ export default function Home() {
   const handleSealComplete = () => {
     setShowSeal(false);
     setRightView('analysis');
+  };
+
+  const handleLogoClick = () => {
+    const logoQuotes = QUOTES.filter((q) => q.trigger === 'logo_click');
+    const q = logoQuotes[Math.floor(Math.random() * logoQuotes.length)];
+    if (q) showGhBubble(q.text, 'waving');
   };
 
   const handleAnalysisUpdate = useCallback(
@@ -145,57 +214,69 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#FAF8F3' }}>
+    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', backgroundColor: '#FAF8F3' }}>
       <Header
         currentDate={currentDate}
         onDateChange={setCurrentDate}
         onSettingsClick={() => { setSettingsHint(undefined); setShowSettings(true); }}
         onGoalsClick={() => setShowGoals(true)}
+        onLogoClick={handleLogoClick}
         activeModelName={activeModelName}
       />
 
-      <main
-        className="max-w-[1200px] mx-auto flex flex-col md:flex-row"
-        style={{ height: 'calc(100vh - 56px)', marginTop: 56 }}
-      >
-        <section
-          className="md:w-[60%] w-full flex flex-col overflow-hidden border-b md:border-b-0 md:border-r border-[#E8E4DA]"
-          style={{ minHeight: 400 }}
+      {/* Inner column: takes all height below header, splits between content and music bar */}
+      <div style={{ flex: '1 1 0%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+        {/* Main content */}
+        <main
+          style={{ flex: '1 1 0%', minHeight: 0, overflow: 'hidden', display: 'flex' }}
+          className="max-w-[1200px] w-full mx-auto flex-col md:flex-row"
         >
-          <div className="px-4 py-2 border-b border-[#E8E4DA] shrink-0">
-            <h2 className="text-xs font-medium text-gray-400 tracking-widest">时间轴</h2>
-          </div>
-          <TimelinePanel
-            events={diaryData.events}
-            onAddEvent={openAddDialog}
-            onEditEvent={openEditDialog}
-            onFloatingAdd={() => openAddDialog(currentTimeStr())}
-          />
-        </section>
-
-        <section className="md:w-[40%] w-full flex flex-col overflow-hidden">
-          <div className="px-4 py-2 border-b border-[#E8E4DA] shrink-0">
-            <h2 className="text-xs font-medium text-gray-400 tracking-widest">
-              {rightView === 'analysis' ? 'AI 分析' : '今日记录'}
-            </h2>
-          </div>
-
-          {rightView === 'notes' ? (
-            <NotesPanel
-              data={diaryData}
-              onChange={updateDiary}
-              onEndRecord={handleEndRecord}
-              hasAnalysis={!!diaryData.analysis}
+          <section
+            className="md:w-[60%] w-full flex flex-col border-b md:border-b-0 md:border-r border-[#E8E4DA]"
+            style={{ minHeight: 0, overflow: 'hidden' }}
+          >
+            <div className="px-4 py-2 border-b border-[#E8E4DA] shrink-0">
+              <h2 className="text-xs font-medium text-gray-400 tracking-widest">时间轴</h2>
+            </div>
+            <TimelinePanel
+              events={diaryData.events}
+              onAddEvent={openAddDialog}
+              onEditEvent={openEditDialog}
+              onResizeEvent={handleResizeEvent}
+              onFloatingAdd={() => openAddDialog(currentTimeStr())}
             />
-          ) : (
-            <AnalysisView
-              data={diaryData}
-              onBack={() => setRightView('notes')}
-              onAnalysisUpdate={handleAnalysisUpdate}
-            />
-          )}
-        </section>
-      </main>
+          </section>
+
+          <section
+            className="md:w-[40%] w-full flex flex-col"
+            style={{ minHeight: 0, overflow: 'hidden' }}
+          >
+            {rightView === 'notes' && (
+              <div className="px-4 py-2 border-b border-[#E8E4DA] shrink-0">
+                <h2 className="text-xs font-medium text-gray-400 tracking-widest">今日记录</h2>
+              </div>
+            )}
+            {rightView === 'notes' ? (
+              <NotesPanel
+                data={diaryData}
+                onChange={updateDiary}
+                onEndRecord={handleEndRecord}
+                hasAnalysis={!!diaryData.analysis}
+              />
+            ) : (
+              <AnalysisView
+                data={diaryData}
+                onBack={() => setRightView('notes')}
+                onAnalysisUpdate={handleAnalysisUpdate}
+              />
+            )}
+          </section>
+        </main>
+
+        {/* Music player — anchored to bottom of inner column */}
+        <MusicPlayer onMeditationOpen={() => setShowMeditation(true)} />
+      </div>
 
       <EventDialog
         isOpen={dialogOpen}
@@ -229,6 +310,21 @@ export default function Home() {
           onClose={() => setShowGoals(false)}
           onChange={() => {/* goals are read fresh on analysis start */}}
         />
+      )}
+
+      {/* Groundhog — only appears when a bubble is triggered */}
+      {ghBubble && (
+        <div
+          className="fixed z-20 select-none pointer-events-none"
+          style={{ bottom: 72, right: 20 }}
+        >
+          <Groundhog state={ghEmotion} size={68} showBubble={ghBubble} />
+        </div>
+      )}
+
+      {/* Meditation overlay */}
+      {showMeditation && (
+        <MeditationMode onClose={() => setShowMeditation(false)} />
       )}
     </div>
   );

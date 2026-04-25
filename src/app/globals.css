@@ -69,3 +69,76 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   opacity: 0.4;
   cursor: pointer;
 }
+
+/* ── Groundhog animations ───────────────────────────────────────── */
+
+@keyframes gh-blink {
+  0%, 88%, 100% { transform: scaleY(1); }
+  93% { transform: scaleY(0.08); }
+}
+@keyframes gh-nod {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-9deg); }
+}
+@keyframes gh-jump {
+  0%, 100% { transform: translateY(0); }
+  45% { transform: translateY(-14px); }
+}
+@keyframes gh-breathe {
+  0%, 100% { transform: scaleY(1); transform-origin: bottom; }
+  50% { transform: scaleY(1.07); transform-origin: bottom; }
+}
+@keyframes gh-wave {
+  0%, 100% { transform: rotate(0deg); transform-origin: bottom center; }
+  30% { transform: rotate(30deg); transform-origin: bottom center; }
+  60% { transform: rotate(-10deg); transform-origin: bottom center; }
+}
+@keyframes gh-wobble {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(3deg); }
+  75% { transform: rotate(-3deg); }
+}
+@keyframes gh-dig {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(8px); }
+}
+@keyframes gh-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+@keyframes bubble-pop {
+  0% { transform: scale(0.5); opacity: 0; }
+  70% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes bubble-fade {
+  0% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+@keyframes slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.gh-blink     { animation: gh-blink  3.5s ease-in-out infinite; }
+.gh-nod       { animation: gh-nod    1.2s ease-in-out infinite; }
+.gh-jump      { animation: gh-jump   0.7s ease-in-out infinite; }
+.gh-breathe   { animation: gh-breathe 4s ease-in-out infinite; }
+.gh-wave      { animation: gh-wave   0.9s ease-in-out infinite; }
+.gh-wobble    { animation: gh-wobble 2.5s ease-in-out infinite; }
+.gh-dig       { animation: gh-dig    0.8s ease-in-out infinite; }
+.gh-pulse-anim { animation: gh-pulse 2s ease-in-out infinite; }
+
+.bubble-enter { animation: bubble-pop 0.25s ease-out forwards; }
+.bubble-exit  { animation: bubble-fade 0.3s ease-in forwards; }
+.slide-up     { animation: slide-up 0.3s ease-out forwards; }
+.fade-in-anim { animation: fade-in 0.4s ease forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .gh-blink, .gh-nod, .gh-jump, .gh-breathe,
+  .gh-wave, .gh-wobble, .gh-dig, .gh-pulse-anim { animation: none; }
+}

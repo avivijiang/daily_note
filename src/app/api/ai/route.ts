@@ -13,7 +13,11 @@ export async function POST(req: NextRequest) {
   if (!apiKey)  return new Response(JSON.stringify({ error: 'Missing API key'  }), { status: 400 });
   if (!modelId) return new Response(JSON.stringify({ error: 'Missing model ID' }), { status: 400 });
 
-  const { system, userMessage } = await req.json();
+  const body = await req.json();
+  const { system } = body;
+  // Support both single-turn { userMessage } and multi-turn { messages }
+  const messages: { role: 'user' | 'assistant'; content: string }[] =
+    body.messages ?? [{ role: 'user', content: body.userMessage ?? '' }];
 
   const openrouter = createOpenAI({
     baseURL: 'https://openrouter.ai/api/v1',
@@ -24,7 +28,7 @@ export async function POST(req: NextRequest) {
     const result = streamText({
       model: openrouter(modelId),
       system,
-      messages: [{ role: 'user', content: userMessage }],
+      messages,
       maxOutputTokens: 2000,
     });
 

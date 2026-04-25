@@ -7,13 +7,14 @@ import {
   ANALYSIS_SYSTEM_PROMPT,
   parseStream,
 } from '@/lib/claude';
-import { streamAI, getActiveModel } from '@/lib/ai';
+import { streamAI, streamAIChat, getActiveModel, ChatMessage } from '@/lib/ai';
 import { PERSONAS } from '@/lib/personas';
 import { loadCustomPersonas } from '@/lib/customPersonas';
 import { loadGoals } from '@/lib/goals';
 import { PersonaCreatorModal } from '@/components/PersonaCreatorModal';
 
-// ── Unified persona shape for rendering ──────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────
+
 interface AnyPersona {
   id: string;
   name: string;
@@ -23,6 +24,15 @@ interface AnyPersona {
   systemPrompt: string;
   isCustom?: boolean;
 }
+
+interface UIChatMessage {
+  role: 'user' | 'ai';
+  content: string;
+  personaId: string;
+  streaming?: boolean;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────
 
 function toAnyPersona(p: CustomPersona): AnyPersona {
   return {
@@ -36,121 +46,114 @@ function toAnyPersona(p: CustomPersona): AnyPersona {
   };
 }
 
-// ─── Typewriter hook ──────────────────────────────────────────────────
-function useTypewriter(text: string, active = true) {
-  const [displayed, setDisplayed] = useState('');
+function buildChatSystem(persona: AnyPersona, diaryContext: string): string {
+  return `${persona.systemPrompt}
 
-  useEffect(() => {
-    if (!active) { setDisplayed(text); return; }
-    if (text.length > displayed.length) setDisplayed(text);
-  }, [text, displayed.length, active]);
+---
+以下是用户今天的日记内容和分析摘要，作为对话背景（已阅读，无需重复引用，直接进入对话）：
 
-  return displayed;
+${diaryContext}
+
+请保持你的角色风格，简洁回应，每次回复不超过 200 字。`;
 }
 
-// ─── Score stars ──────────────────────────────────────────────────────
+// ── Score stars ───────────────────────────────────────────────────────
+
 function ScoreStars({ score }: { score: number }) {
   return (
-    <span className="text-sm">
+    <span>
       {Array.from({ length: 10 }, (_, i) => (
-        <span key={i} style={{ color: i < score ? '#F4C430' : '#ddd' }}>★</span>
+        <span key={i} className="text-xs" style={{ color: i < score ? '#F4C430' : '#e5e7eb' }}>★</span>
       ))}
     </span>
   );
 }
 
-// ─── Persona card ─────────────────────────────────────────────────────
-function PersonaCard({
-  persona,
-  diaryMessage,
-  cached,
-  onCache,
+// ── Persona tabs ──────────────────────────────────────────────────────
+
+function PersonaTabs({
+  personas, activeId, onSelect, onAdd, onEdit,
 }: {
-  persona: AnyPersona;
-  diaryMessage: string;
-  cached?: string;
-  onCache: (id: string, text: string) => void;
+  personas: AnyPersona[];
+  activeId: string;
+  onSelect: (id: string) => void;
+  onAdd: () => void;
+  onEdit: (id: string) => void;
 }) {
-  const [text, setText] = useState(cached ?? '');
-  const [loading, setLoading] = useState(!cached);
-  const [error, setError] = useState('');
-  const [streaming, setStreaming] = useState(!cached);
-  const abortRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    if (cached) {
-      setText(cached); setLoading(false); setStreaming(false);
-      return;
-    }
-
-    const ac = new AbortController();
-    abortRef.current = ac;
-    let accumulated = '';
-
-    const userMsg = `${diaryMessage}\n\n以上是这个人今天的记录，请用你的风格给出点评。`;
-
-    streamAI(persona.systemPrompt, userMsg, (chunk: string) => {
-      accumulated += chunk;
-      setText(accumulated);
-    }, ac.signal)
-      .then(() => {
-        onCache(persona.id, accumulated);
-        setLoading(false);
-        setStreaming(false);
-      })
-      .catch((err: unknown) => {
-        const e = err as Error;
-        if (e.name !== 'AbortError') {
-          setError(e.message ?? '调用失败');
-          setLoading(false);
-        }
-      });
-
-    return () => ac.abort();
-  }, [persona.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
   return (
-    <div
-      className="rounded-xl p-4 border"
-      style={{
-        backgroundColor: persona.bgColor,
-        borderColor: `${persona.color}22`,
-        borderLeftWidth: 4,
-        borderLeftColor: persona.color,
-      }}
-    >
-      <div className="flex items-center justify-between mb-3">
-        <span className="font-semibold text-sm" style={{ color: persona.color }}>
-          {persona.name}
-        </span>
-        <div
-          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[9px] font-bold leading-none text-center"
+    <div className="flex gap-1.5 overflow-x-auto pb-1 shrink-0" style={{ scrollbarWidth: 'none' }}>
+      {personas.map((p) => (
+        <button
+          key={p.id}
+          onClick={() => onSelect(p.id)}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap shrink-0 group"
           style={{
-            background: `radial-gradient(circle at 40% 35%, ${persona.color}cc, ${persona.color})`,
-            boxShadow: `0 2px 8px ${persona.color}44`,
+            backgroundColor: activeId === p.id ? p.color : 'transparent',
+            color: activeId === p.id ? '#fff' : p.color,
+            border: `1.5px solid ${p.color}44`,
           }}
         >
-          {persona.sealText}
-        </div>
-      </div>
-
-      {error ? (
-        <p className="text-xs text-red-500">{error}</p>
-      ) : loading && !text ? (
-        <div className="flex items-center gap-2 text-xs text-gray-400">
-          <span className="animate-spin">⟳</span> 正在召唤{persona.name}...
-        </div>
-      ) : (
-        <p className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap" style={{ minHeight: 60 }}>
-          {text}
-          {streaming && <span className="animate-pulse">▌</span>}
-        </p>
-      )}
+          {p.sealText} {p.name.replace(/^[^\s]+\s/, '')}
+          {p.isCustom && activeId === p.id && (
+            <span
+              onClick={(e) => { e.stopPropagation(); onEdit(p.id); }}
+              className="ml-0.5 opacity-60 hover:opacity-100 text-[10px]"
+            >✏</span>
+          )}
+        </button>
+      ))}
+      <button
+        onClick={onAdd}
+        className="px-3 py-1.5 rounded-full text-xs text-gray-400 border border-dashed border-gray-200 hover:border-gray-400 hover:text-gray-500 transition-colors whitespace-nowrap shrink-0"
+      >
+        + 自定义
+      </button>
     </div>
   );
 }
 
-// ─── Main AnalysisView ────────────────────────────────────────────────
+// ── Chat message bubble ───────────────────────────────────────────────
+
+function ChatBubble({ msg, persona }: { msg: UIChatMessage; persona?: AnyPersona }) {
+  const isUser = msg.role === 'user';
+  return (
+    <div className={`flex gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'} items-end`}>
+      {/* Avatar */}
+      {!isUser && (
+        <div
+          className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 mb-0.5"
+          style={{
+            background: persona
+              ? `radial-gradient(circle at 40% 35%, ${persona.color}cc, ${persona.color})`
+              : '#999',
+          }}
+        >
+          {persona?.sealText ?? '?'}
+        </div>
+      )}
+
+      <div
+        className="max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap"
+        style={
+          isUser
+            ? { backgroundColor: '#1A3A5C', color: '#fff', borderBottomRightRadius: 4 }
+            : {
+                backgroundColor: persona ? persona.bgColor : '#f5f5f5',
+                color: '#374151',
+                border: `1px solid ${persona ? persona.color + '22' : '#e5e7eb'}`,
+                borderBottomLeftRadius: 4,
+              }
+        }
+      >
+        {msg.content}
+        {msg.streaming && <span className="animate-pulse ml-0.5">▌</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── Main ──────────────────────────────────────────────────────────────
+
 interface AnalysisViewProps {
   data: DiaryData;
   onBack: () => void;
@@ -171,34 +174,37 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
   const [errorMsg, setErrorMsg] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
-  // Goals (loaded once)
   const [goals] = useState<Goal[]>(() => loadGoals());
-
-  // Custom personas (reloaded on create)
   const [customPersonas, setCustomPersonas] = useState<CustomPersona[]>(() => loadCustomPersonas());
   const [showCreator, setShowCreator] = useState(false);
   const [editingPersona, setEditingPersona] = useState<CustomPersona | undefined>();
 
-  // All personas = presets + custom
   const allPersonas: AnyPersona[] = [
     ...PERSONAS.map((p) => ({ ...p, isCustom: false as const })),
     ...customPersonas.map(toAnyPersona),
   ];
 
-  // Active persona tab
   const [activePersonaId, setActivePersonaId] = useState<string>(PERSONAS[0].id);
+  const [personaCache, setPersonaCache] = useState<Record<string, string>>(cached?.personas ?? {});
 
-  // Persona cache
-  const [personaCache, setPersonaCache] = useState<Record<string, string>>(
-    cached?.personas ?? {}
-  );
+  // Chat state
+  const [chatMessages, setChatMessages] = useState<UIChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatStreaming, setChatStreaming] = useState(false);
+  const chatAbortRef = useRef<AbortController | null>(null);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Diary message with goals injected (memoized)
   const diaryMessage = useRef(buildAnalysisMessage(data, goals)).current;
-
   const parsed = parseStream(rawText);
 
-  // Start analysis
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  // Start initial analysis
   const startAnalysis = useCallback(async () => {
     abortRef.current?.abort();
     const ac = new AbortController();
@@ -206,6 +212,7 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
     setRawText('');
     setPhase('streaming');
     setErrorMsg('');
+    setChatMessages([]);
 
     let accumulated = '';
     try {
@@ -220,13 +227,12 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
       );
 
       setPhase('complete');
-
-      const finalParsed = parseStream(accumulated);
+      const fp = parseStream(accumulated);
       const analysis: Analysis = {
         generatedAt: new Date().toISOString(),
-        diary: finalParsed.diary,
-        summary: finalParsed.summary,
-        insight: finalParsed.insight,
+        diary: fp.diary,
+        summary: fp.summary,
+        insight: fp.insight,
         personas: personaCache,
       };
       onAnalysisUpdate(analysis);
@@ -237,13 +243,12 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
     }
   }, [diaryMessage, personaCache, onAnalysisUpdate]);
 
-  // Auto-start if no cached analysis
   useEffect(() => {
     if (!cached) startAnalysis();
     return () => abortRef.current?.abort();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persist persona cache updates
+  // Persona card stream
   const handlePersonaCache = useCallback(
     (id: string, text: string) => {
       setPersonaCache((prev) => {
@@ -264,7 +269,77 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
     if (activePersonaId === id) setActivePersonaId(PERSONAS[0].id);
   };
 
-  // Export diary card
+  // Send chat message
+  const sendChat = useCallback(async () => {
+    const text = chatInput.trim();
+    if (!text || chatStreaming) return;
+    setChatInput('');
+
+    const activePersona = allPersonas.find((p) => p.id === activePersonaId) ?? allPersonas[0];
+
+    // Build history for API
+    const history: ChatMessage[] = chatMessages.map((m) => ({
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: m.content,
+    }));
+    history.push({ role: 'user', content: text });
+
+    const newUI: UIChatMessage[] = [
+      ...chatMessages,
+      { role: 'user', content: text, personaId: activePersonaId },
+      { role: 'ai', content: '', personaId: activePersonaId, streaming: true },
+    ];
+    setChatMessages(newUI);
+    setChatStreaming(true);
+
+    chatAbortRef.current?.abort();
+    const ac = new AbortController();
+    chatAbortRef.current = ac;
+
+    // Context: diary summary + insight
+    const diaryCtx = [
+      parsed.diary ? `日记全文：\n${parsed.diary}` : '',
+      parsed.insight ? `今日洞察：${parsed.insight}` : '',
+    ].filter(Boolean).join('\n\n');
+
+    let acc = '';
+    try {
+      await streamAIChat(
+        buildChatSystem(activePersona, diaryCtx),
+        history,
+        (chunk) => {
+          acc += chunk;
+          setChatMessages((prev) => {
+            const copy = [...prev];
+            copy[copy.length - 1] = { ...copy[copy.length - 1], content: acc };
+            return copy;
+          });
+        },
+        ac.signal
+      );
+      // Mark done
+      setChatMessages((prev) => {
+        const copy = [...prev];
+        copy[copy.length - 1] = { ...copy[copy.length - 1], streaming: false };
+        return copy;
+      });
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      setChatMessages((prev) => {
+        const copy = [...prev];
+        copy[copy.length - 1] = {
+          ...copy[copy.length - 1],
+          content: `（出错了：${err instanceof Error ? err.message : '请重试'}）`,
+          streaming: false,
+        };
+        return copy;
+      });
+    } finally {
+      setChatStreaming(false);
+    }
+  }, [chatInput, chatStreaming, chatMessages, activePersonaId, allPersonas, parsed]);
+
+  // Export diary
   const diaryCardRef = useRef<HTMLDivElement>(null);
   const handleExport = async () => {
     if (!diaryCardRef.current) return;
@@ -282,122 +357,122 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
 
   const isStreaming = phase === 'streaming';
   const activePersona = allPersonas.find((p) => p.id === activePersonaId) ?? allPersonas[0];
+  const showChat = phase === 'complete';
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-[#E8E4DA] shrink-0">
-        <button onClick={onBack} className="flex items-center gap-1 text-sm text-[#1A3A5C] hover:text-[#2a4a6c] transition-colors">
-          ← 返回记录
+    <div className="h-full flex flex-col overflow-hidden bg-[#FAF8F3]">
+
+      {/* ── Top bar ── */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-[#E8E4DA] shrink-0 bg-[#FAF8F3]">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm text-[#1A3A5C]/70 hover:text-[#1A3A5C] transition-colors"
+        >
+          ← 返回
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {phase === 'complete' && (
-            <button onClick={startAnalysis} className="text-xs text-gray-400 hover:text-gray-600 transition-colors px-2 py-1 rounded hover:bg-gray-100">
+            <button
+              onClick={startAnalysis}
+              className="text-xs text-[#1A3A5C] font-medium px-3 py-1 rounded-lg border border-[#1A3A5C]/25 transition-colors hover:bg-[#1A3A5C]/5"
+              style={{ backgroundColor: '#FAF8F3' }}
+            >
               重新分析
             </button>
           )}
-          <span className="text-xs text-gray-400">{getActiveModel().name}</span>
+          <span className="text-xs text-gray-300">{getActiveModel().name}</span>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      {/* ── Scrollable content ── */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+
         {/* Error */}
         {phase === 'error' && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-            <p className="text-sm text-red-600 font-medium mb-1">分析失败</p>
-            <p className="text-xs text-red-500">{errorMsg}</p>
-            <button onClick={startAnalysis} className="mt-3 px-4 py-1.5 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">重试</button>
+          <div className="mx-5 mt-5 bg-red-50 border border-red-200 rounded-2xl p-5">
+            <p className="text-sm font-medium text-red-600 mb-1">分析失败</p>
+            <p className="text-xs text-red-500 mb-3">{errorMsg}</p>
+            <button
+              onClick={startAnalysis}
+              className="px-4 py-1.5 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+            >
+              重试
+            </button>
           </div>
         )}
 
-        {/* Card 1: Diary */}
+        {/* Loading skeleton */}
+        {isStreaming && !parsed.diary && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-400">
+            <div className="w-6 h-6 border-2 border-[#1A3A5C]/30 border-t-[#1A3A5C] rounded-full animate-spin" />
+            <span className="text-sm">正在整理今天的记录...</span>
+          </div>
+        )}
+
+        {/* ── Diary card ── */}
         {(parsed.diary || isStreaming) && (
-          <div ref={diaryCardRef} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <div ref={diaryCardRef} className="mx-5 mt-5">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gray-700">📔 今天的日记</h3>
+              <span className="text-xs font-semibold text-gray-400 tracking-widest uppercase">Today</span>
               {parsed.diaryDone && (
-                <button onClick={handleExport} className="text-xs text-[#1A3A5C] hover:underline">导出图片</button>
+                <button
+                  onClick={handleExport}
+                  className="text-xs text-[#1A3A5C]/50 hover:text-[#1A3A5C] transition-colors"
+                >
+                  导出图片
+                </button>
               )}
             </div>
-            <div className="text-sm leading-[1.9] text-gray-700 whitespace-pre-wrap" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
+            <div
+              className="text-[15px] leading-[2] text-gray-800 whitespace-pre-wrap"
+              style={{ fontFamily: 'Georgia, "Times New Roman", "Noto Serif SC", serif' }}
+            >
               {parsed.diary}
-              {isStreaming && !parsed.diaryDone && <span className="animate-pulse">▌</span>}
+              {isStreaming && !parsed.diaryDone && <span className="animate-pulse text-[#1A3A5C]">▌</span>}
             </div>
           </div>
         )}
 
-        {/* Card 2: Summary */}
+        {/* ── Summary card ── */}
         {parsed.summary && (
-          <SummaryCard summary={parsed.summary} hasGoals={goals.some((g) => g.isActive)} />
+          <div className="mx-5 mt-6">
+            <div className="text-xs font-semibold text-gray-400 tracking-widest uppercase mb-3">Overview</div>
+            <SummaryCard summary={parsed.summary} hasGoals={goals.some((g) => g.isActive)} />
+          </div>
         )}
 
-        {/* Card 3: Insight */}
+        {/* ── Insight card ── */}
         {(parsed.insight || (isStreaming && parsed.diaryDone && parsed.summaryDone)) && (
-          <div className="rounded-xl p-4 border-l-4" style={{ backgroundColor: '#EBF2FA', borderLeftColor: '#1A3A5C' }}>
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">💡 今日洞察</h3>
+          <div
+            className="mx-5 mt-5 px-5 py-4 rounded-2xl border-l-4"
+            style={{ backgroundColor: '#F0F5FC', borderLeftColor: '#1A3A5C' }}
+          >
+            <div className="text-xs font-semibold text-[#1A3A5C]/50 tracking-widest uppercase mb-2">Insight</div>
             <p className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">
               {parsed.insight}
-              {isStreaming && !parsed.insightDone && <span className="animate-pulse">▌</span>}
+              {isStreaming && !parsed.insightDone && <span className="animate-pulse text-[#1A3A5C]">▌</span>}
             </p>
           </div>
         )}
 
-        {/* Loading state */}
-        {isStreaming && !parsed.diary && (
-          <div className="flex items-center gap-3 text-sm text-gray-400 py-8 justify-center">
-            <span className="animate-spin text-lg">⟳</span>
-            正在整理今天的记录...
-          </div>
-        )}
-
-        {/* Persona section */}
+        {/* ── Persona section ── */}
         {phase === 'complete' && parsed.insightDone && (
-          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">🎭 大佬视角点评</h3>
+          <div className="mx-5 mt-6 mb-2">
+            <div className="text-xs font-semibold text-gray-400 tracking-widest uppercase mb-3">Perspectives</div>
 
-            {/* Tabs */}
-            <div className="flex gap-1 mb-4 overflow-x-auto pb-1 flex-wrap">
-              {allPersonas.map((p) => (
-                <div key={p.id} className="flex items-center gap-0.5">
-                  <button
-                    onClick={() => setActivePersonaId(p.id)}
-                    className="px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap shrink-0"
-                    style={{
-                      backgroundColor: activePersonaId === p.id ? p.color : 'transparent',
-                      color: activePersonaId === p.id ? '#fff' : p.color,
-                      border: `1.5px solid ${p.color}`,
-                    }}
-                  >
-                    {p.name}
-                  </button>
-                  {p.isCustom && (
-                    <button
-                      onClick={() => {
-                        const cp = customPersonas.find((c) => c.id === p.id);
-                        setEditingPersona(cp);
-                        setShowCreator(true);
-                      }}
-                      className="text-[10px] text-gray-400 hover:text-gray-600 px-0.5"
-                      title="编辑"
-                    >
-                      ✏️
-                    </button>
-                  )}
-                </div>
-              ))}
+            <PersonaTabs
+              personas={allPersonas}
+              activeId={activePersonaId}
+              onSelect={setActivePersonaId}
+              onAdd={() => { setEditingPersona(undefined); setShowCreator(true); }}
+              onEdit={(id) => {
+                const cp = customPersonas.find((c) => c.id === id);
+                setEditingPersona(cp);
+                setShowCreator(true);
+              }}
+            />
 
-              {/* Add custom */}
-              <button
-                onClick={() => { setEditingPersona(undefined); setShowCreator(true); }}
-                className="px-2.5 py-1.5 rounded-full text-xs text-gray-400 border border-dashed border-gray-300 hover:border-gray-400 hover:text-gray-500 transition-colors whitespace-nowrap shrink-0"
-              >
-                + 自定义
-              </button>
-            </div>
-
-            {/* Active persona card */}
-            {activePersona && (
+            <div className="mt-3">
               <PersonaCard
                 key={activePersonaId}
                 persona={activePersona}
@@ -405,9 +480,8 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
                 cached={personaCache[activePersonaId]}
                 onCache={handlePersonaCache}
               />
-            )}
+            </div>
 
-            {/* Delete button for custom personas */}
             {activePersona?.isCustom && (
               <button
                 onClick={() => handleDeleteCustomPersona(activePersonaId)}
@@ -418,9 +492,84 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
             )}
           </div>
         )}
+
+        {/* ── Chat history ── */}
+        {showChat && (
+          <div className="mx-5 mt-6 mb-2">
+            {chatMessages.length > 0 && (
+              <>
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="flex-1 h-px bg-[#E8E4DA]" />
+                  <span className="text-xs text-gray-300">对话</span>
+                  <div className="flex-1 h-px bg-[#E8E4DA]" />
+                </div>
+                <div className="space-y-3">
+                  {chatMessages.map((msg, i) => (
+                    <ChatBubble
+                      key={i}
+                      msg={msg}
+                      persona={allPersonas.find((p) => p.id === msg.personaId)}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+            <div ref={chatBottomRef} className="h-4" />
+          </div>
+        )}
       </div>
 
-      {/* Custom persona creator */}
+      {/* ── Chat input bar ── */}
+      {showChat && (
+        <div className="shrink-0 border-t border-[#E8E4DA] bg-[#FAF8F3] px-4 py-3">
+          {/* Persona label */}
+          <div className="flex items-center gap-1.5 mb-2">
+            <div
+              className="w-4 h-4 rounded-full text-white flex items-center justify-center text-[8px] font-bold"
+              style={{ backgroundColor: activePersona.color }}
+            >
+              {activePersona.sealText}
+            </div>
+            <span className="text-xs text-gray-400">与 {activePersona.name} 对话</span>
+            {chatStreaming && (
+              <span className="text-xs text-gray-300 ml-auto">正在回复...</span>
+            )}
+          </div>
+
+          <div className="flex items-end gap-2">
+            <textarea
+              ref={inputRef}
+              value={chatInput}
+              onChange={(e) => {
+                setChatInput(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 100) + 'px';
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  sendChat();
+                }
+              }}
+              placeholder="继续聊聊… (Enter 发送，Shift+Enter 换行)"
+              rows={1}
+              disabled={chatStreaming}
+              className="flex-1 resize-none rounded-xl border border-[#E8E4DA] bg-white px-3.5 py-2.5 text-sm text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-[#1A3A5C]/20 focus:border-[#1A3A5C]/30 transition-all disabled:opacity-50"
+              style={{ minHeight: 40, maxHeight: 100, lineHeight: '1.5' }}
+            />
+            <button
+              onClick={sendChat}
+              disabled={!chatInput.trim() || chatStreaming}
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-white transition-all disabled:opacity-30 shrink-0"
+              style={{ backgroundColor: '#1A3A5C' }}
+            >
+              ↑
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Persona creator modal */}
       {showCreator && (
         <PersonaCreatorModal
           editPersona={editingPersona}
@@ -432,65 +581,143 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
   );
 }
 
-// ─── Summary card ─────────────────────────────────────────────────────
-function SummaryCard({ summary, hasGoals }: { summary: AnalysisSummary; hasGoals: boolean }) {
+// ── Persona card (single view) ────────────────────────────────────────
+
+function PersonaCard({
+  persona, diaryMessage, cached, onCache,
+}: {
+  persona: AnyPersona;
+  diaryMessage: string;
+  cached?: string;
+  onCache: (id: string, text: string) => void;
+}) {
+  const [text, setText] = useState(cached ?? '');
+  const [loading, setLoading] = useState(!cached);
+  const [streaming, setStreaming] = useState(!cached);
+  const [error, setError] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (cached) { setText(cached); setLoading(false); setStreaming(false); return; }
+
+    const ac = new AbortController();
+    abortRef.current = ac;
+    let acc = '';
+
+    streamAI(
+      persona.systemPrompt,
+      `${diaryMessage}\n\n以上是这个人今天的记录，请用你的风格给出点评。`,
+      (chunk) => { acc += chunk; setText(acc); },
+      ac.signal
+    )
+      .then(() => { onCache(persona.id, acc); setLoading(false); setStreaming(false); })
+      .catch((err: unknown) => {
+        const e = err as Error;
+        if (e.name !== 'AbortError') { setError(e.message ?? '调用失败'); setLoading(false); }
+      });
+
+    return () => ac.abort();
+  }, [persona.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">📊 今日速览</h3>
-      <div className="space-y-2.5 text-sm">
-        <div className="flex items-start gap-2">
-          <span className="text-gray-400 shrink-0 w-10">心情</span>
-          <span className="text-gray-700">{summary.mood}</span>
+    <div
+      className="rounded-2xl p-4"
+      style={{
+        backgroundColor: persona.bgColor || '#f9f9f9',
+        borderLeft: `3px solid ${persona.color}`,
+      }}
+    >
+      {error ? (
+        <p className="text-xs text-red-500">{error}</p>
+      ) : loading && !text ? (
+        <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
+          <span className="animate-spin">⟳</span>
+          召唤{persona.name}中...
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-gray-400 shrink-0 w-10">评分</span>
-          <span className="text-gray-700 mr-2">{summary.score}/10</span>
-          <ScoreStars score={summary.score} />
-        </div>
-        {hasGoals && summary.goalAlignment != null && (
-          <div className="flex items-center gap-2">
-            <span className="text-gray-400 shrink-0 w-10">目标</span>
-            <span className="text-gray-700 mr-2">对齐 {summary.goalAlignment}/10</span>
-            <GoalBar score={summary.goalAlignment} />
-          </div>
-        )}
-        {summary.insights.length > 0 && (
-          <div className="flex items-start gap-2">
-            <span className="text-gray-400 shrink-0 w-10">灵感</span>
-            <div className="flex flex-wrap gap-1">
-              {summary.insights.map((ins, i) => (
-                <span key={i} className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-xs px-2 py-0.5 rounded-full">{ins}</span>
-              ))}
-            </div>
-          </div>
-        )}
-        {summary.gratitude.length > 0 && (
-          <div className="flex items-start gap-2">
-            <span className="text-gray-400 shrink-0 w-10">感谢</span>
-            <div className="space-y-0.5">
-              {summary.gratitude.map((g, i) => <div key={i} className="text-gray-700">· {g}</div>)}
-            </div>
-          </div>
-        )}
-        {summary.todos.length > 0 && (
-          <div className="flex items-start gap-2">
-            <span className="text-gray-400 shrink-0 w-10">待办</span>
-            <div className="space-y-0.5">
-              {summary.todos.map((t, i) => <div key={i} className="text-gray-700">· {t}</div>)}
-            </div>
-          </div>
-        )}
-      </div>
+      ) : (
+        <p className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">
+          {text}
+          {streaming && <span className="animate-pulse">▌</span>}
+        </p>
+      )}
     </div>
   );
 }
 
-function GoalBar({ score }: { score: number }) {
-  const pct = (score / 10) * 100;
-  const color = score >= 7 ? '#22c55e' : score >= 4 ? '#f59e0b' : '#ef4444';
+// ── Summary card ──────────────────────────────────────────────────────
+
+function SummaryCard({ summary, hasGoals }: { summary: AnalysisSummary; hasGoals: boolean }) {
   return (
-    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden max-w-[80px]">
-      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+    <div className="space-y-3">
+      {/* Top row: mood + score */}
+      <div className="flex gap-3">
+        <div className="flex-1 bg-white rounded-2xl px-4 py-3 border border-gray-100">
+          <div className="text-xs text-gray-400 mb-1">心情</div>
+          <div className="text-sm font-medium text-gray-700">{summary.mood}</div>
+        </div>
+        <div className="flex-1 bg-white rounded-2xl px-4 py-3 border border-gray-100">
+          <div className="text-xs text-gray-400 mb-1">评分</div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-semibold text-gray-700">{summary.score}</span>
+            <span className="text-xs text-gray-300">/10</span>
+            <ScoreStars score={summary.score} />
+          </div>
+        </div>
+      </div>
+
+      {/* Goal alignment */}
+      {hasGoals && summary.goalAlignment != null && (
+        <div className="bg-white rounded-2xl px-4 py-3 border border-gray-100">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs text-gray-400">目标对齐度</span>
+            <span className="text-xs font-medium text-gray-600">{summary.goalAlignment}/10</span>
+          </div>
+          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{
+                width: `${(summary.goalAlignment / 10) * 100}%`,
+                backgroundColor: summary.goalAlignment >= 7 ? '#22c55e' : summary.goalAlignment >= 4 ? '#f59e0b' : '#ef4444',
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Insights + gratitude + todos */}
+      {summary.insights.length > 0 && (
+        <div className="bg-white rounded-2xl px-4 py-3 border border-gray-100">
+          <div className="text-xs text-gray-400 mb-2">灵感闪现</div>
+          <div className="flex flex-wrap gap-1.5">
+            {summary.insights.map((ins, i) => (
+              <span key={i} className="bg-amber-50 border border-amber-100 text-amber-700 text-xs px-2.5 py-0.5 rounded-full">
+                {ins}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(summary.gratitude.length > 0 || summary.todos.length > 0) && (
+        <div className="flex gap-3">
+          {summary.gratitude.length > 0 && (
+            <div className="flex-1 bg-white rounded-2xl px-4 py-3 border border-gray-100">
+              <div className="text-xs text-gray-400 mb-2">感谢</div>
+              {summary.gratitude.map((g, i) => (
+                <div key={i} className="text-xs text-gray-600 leading-relaxed">· {g}</div>
+              ))}
+            </div>
+          )}
+          {summary.todos.length > 0 && (
+            <div className="flex-1 bg-white rounded-2xl px-4 py-3 border border-gray-100">
+              <div className="text-xs text-gray-400 mb-2">待办</div>
+              {summary.todos.map((t, i) => (
+                <div key={i} className="text-xs text-gray-600 leading-relaxed">· {t}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
