@@ -205,12 +205,6 @@ export default function Home() {
     setRightView('analysis');
   };
 
-  const handleLogoClick = () => {
-    const logoQuotes = QUOTES.filter((q) => q.trigger === 'logo_click');
-    const q = logoQuotes[Math.floor(Math.random() * logoQuotes.length)];
-    if (q) showGhBubble(q.text, 'waving');
-  };
-
   const handleAnalysisUpdate = useCallback(
     (analysis: Analysis) => {
       const updated = { ...diaryData, analysis };
@@ -256,7 +250,6 @@ export default function Home() {
         onDateChange={setCurrentDate}
         onSettingsClick={() => { setSettingsHint(undefined); setShowSettings(true); }}
         onGoalsClick={() => setShowGoals(true)}
-        onLogoClick={handleLogoClick}
         activeModelName={activeModelName}
         onLoginRequest={handleLoginRequest}
         onSyncComplete={handleSyncComplete}

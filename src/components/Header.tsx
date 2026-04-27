@@ -9,13 +9,12 @@ interface HeaderProps {
   onDateChange: (date: string) => void;
   onSettingsClick: () => void;
   onGoalsClick: () => void;
-  onLogoClick?: () => void;
   activeModelName?: string;
   onLoginRequest?: () => void;
   onSyncComplete?: () => void;
 }
 
-export function Header({ currentDate, onDateChange, onSettingsClick, onGoalsClick, onLogoClick, activeModelName, onLoginRequest, onSyncComplete }: HeaderProps) {
+export function Header({ currentDate, onDateChange, onSettingsClick, onGoalsClick, activeModelName, onLoginRequest, onSyncComplete }: HeaderProps) {
   const weekDays = getWeekDays(currentDate);
   const today = todayStr();
   const isToday = currentDate === today;
@@ -25,14 +24,8 @@ export function Header({ currentDate, onDateChange, onSettingsClick, onGoalsClic
       <div className="max-w-[1200px] mx-auto px-4 h-14 flex items-center gap-4">
         {/* Groundhog logo + date title */}
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={onLogoClick}
-            title="点击土拨鼠"
-            className="w-8 h-8 flex items-center justify-center hover:scale-110 transition-transform"
-            style={{ fontSize: 22 }}
-          >
-            🦫
-          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="土拨鼠日记" className="w-8 h-8 object-contain" />
           <div
             className="text-base font-semibold text-[#1A3A5C] whitespace-nowrap"
             style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}

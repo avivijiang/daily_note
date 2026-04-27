@@ -88,6 +88,21 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   0%, 100% { transform: scaleY(1); transform-origin: bottom; }
   50% { transform: scaleY(1.07); transform-origin: bottom; }
 }
+@keyframes gh-popup {
+  0%, 100% { transform: translateY(3px); }
+  50% { transform: translateY(-5px); }
+}
+@keyframes gh-peek {
+  0%, 100% { transform: translateY(6px); }
+  50% { transform: translateY(0px); }
+}
+@keyframes gh-shake {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-6deg); }
+  40% { transform: rotate(6deg); }
+  60% { transform: rotate(-4deg); }
+  80% { transform: rotate(4deg); }
+}
 @keyframes gh-wave {
   0%, 100% { transform: rotate(0deg); transform-origin: bottom center; }
   30% { transform: rotate(30deg); transform-origin: bottom center; }
@@ -124,14 +139,17 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   to   { opacity: 1; }
 }
 
-.gh-blink     { animation: gh-blink  3.5s ease-in-out infinite; }
-.gh-nod       { animation: gh-nod    1.2s ease-in-out infinite; }
-.gh-jump      { animation: gh-jump   0.7s ease-in-out infinite; }
-.gh-breathe   { animation: gh-breathe 4s ease-in-out infinite; }
-.gh-wave      { animation: gh-wave   0.9s ease-in-out infinite; }
-.gh-wobble    { animation: gh-wobble 2.5s ease-in-out infinite; }
-.gh-dig       { animation: gh-dig    0.8s ease-in-out infinite; }
-.gh-pulse-anim { animation: gh-pulse 2s ease-in-out infinite; }
+.gh-blink      { animation: gh-blink   3.5s ease-in-out infinite; }
+.gh-nod        { animation: gh-nod     1.2s ease-in-out infinite; }
+.gh-jump       { animation: gh-jump    0.7s ease-in-out infinite; }
+.gh-breathe    { animation: gh-breathe 4s   ease-in-out infinite; }
+.gh-wave       { animation: gh-wave    0.9s ease-in-out infinite; }
+.gh-wobble     { animation: gh-wobble  2.5s ease-in-out infinite; }
+.gh-dig        { animation: gh-dig     0.8s ease-in-out infinite; }
+.gh-pulse-anim { animation: gh-pulse   2s   ease-in-out infinite; }
+.gh-popup      { animation: gh-popup   2.8s ease-in-out infinite; }
+.gh-peek       { animation: gh-peek    3.5s ease-in-out infinite; }
+.gh-shake      { animation: gh-shake   0.6s ease-in-out infinite; }
 
 .bubble-enter { animation: bubble-pop 0.25s ease-out forwards; }
 .bubble-exit  { animation: bubble-fade 0.3s ease-in forwards; }
@@ -140,5 +158,6 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 
 @media (prefers-reduced-motion: reduce) {
   .gh-blink, .gh-nod, .gh-jump, .gh-breathe,
-  .gh-wave, .gh-wobble, .gh-dig, .gh-pulse-anim { animation: none; }
+  .gh-wave, .gh-wobble, .gh-dig, .gh-pulse-anim,
+  .gh-popup, .gh-peek, .gh-shake { animation: none; }
 }

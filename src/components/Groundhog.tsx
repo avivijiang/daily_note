@@ -35,7 +35,7 @@ export function Groundhog({ state = 'idle', size = 80, showBubble, className = '
           <div className="bg-[#FAF6EE] border border-[#D4B896] rounded-xl px-3 py-2 text-xs text-[#5A3825] leading-relaxed shadow-md relative">
             {bubbleText}
             <div
-              className="absolute bottom-[-7px] left-1/2 -translate-x-1/2 w-3 h-3 bg-[#FAF6EE] border-r border-b border-[#D4B896]"
+              className="absolute bottom-[-7px] left-1/2 w-3 h-3 bg-[#FAF6EE] border-r border-b border-[#D4B896]"
               style={{ transform: 'translateX(-50%) rotate(45deg)' }}
             />
           </div>
@@ -46,288 +46,435 @@ export function Groundhog({ state = 'idle', size = 80, showBubble, className = '
   );
 }
 
-// ── The actual SVG ────────────────────────────────────────────────────
+// ── Color palette (matches logo) ─────────────────────────────────────
+
+const C = {
+  ring:    '#7B4721',   // circle border — matches logo ring
+  body:    '#A0652A',   // main fur
+  bodyDk:  '#8B5420',   // darker fur shading
+  belly:   '#C89450',   // lighter face/belly
+  bellyLt: '#D8AC6A',   // lightest belly
+  earIn:   '#C07060',   // inner ear pink
+  nose:    '#3D2010',   // nose
+  eye:     '#1A0A00',   // eyes
+  eyeHi:   '#FFFFFF',   // eye highlight
+  teeth:   '#FFFAF0',   // front teeth
+  dirt:    '#7B4721',   // dirt mound (same as ring)
+  dirtDk:  '#5A3210',   // dark hole shadow
+  dirtLt:  '#9B6030',   // dirt highlight
+  cheek:   '#E08070',   // cheek blush
+  white:   '#FFFFFF',
+  brand:   '#1A3A5C',
+  gold:    '#F4C430',
+  dark:    '#3D2010',
+};
+
+// ── SVG ──────────────────────────────────────────────────────────────
 
 function GroundhogSVG({ state, size }: { state: GroundhogEmotion; size: number }) {
-  // Color palette
-  const C = {
-    body:    '#8B6040',
-    belly:   '#C49A6C',
-    dark:    '#5A3825',
-    nose:    '#D4857A',
-    eye:     '#1A0F0A',
-    eyehi:   '#FFFFFF',
-    ear:     '#7A5035',
-    earIn:   '#D4857A',
-    brand:   '#1A3A5C',
-    white:   '#FFFFFF',
-    gold:    '#F4C430',
+
+  // ── Per-state config ──────────────────────────────────────────────
+
+  // How high the groundhog peeks out (translateY of whole body group, lower = more hidden)
+  const peekY: Partial<Record<GroundhogEmotion, number>> = {
+    excited: -10,
+    happy:   -4,
+    waving:  -4,
+    thumbsup:-4,
+    idle:    0,
+    thinking:0,
+    music:   0,
+    sleepy:  2,
+    sad:     8,
   };
+  const py = peekY[state] ?? 0;
 
-  // Head rotation per state
-  const headRot: Partial<Record<GroundhogEmotion, number>> = {
-    thinking: -12, waving: 8, sad: 15,
+  // Head tilt
+  const headTilt: Partial<Record<GroundhogEmotion, number>> = {
+    thinking: -14, sad: 12, waving: 6,
   };
-  const hr = headRot[state] ?? 0;
+  const ht = headTilt[state] ?? 0;
 
-  // Eye shapes per state
-  const eyeShape = (state: GroundhogEmotion) => {
-    if (state === 'happy' || state === 'excited') return 'curved';
-    if (state === 'sleepy') return 'half';
-    if (state === 'sad') return 'sad';
-    return 'normal';
-  };
-
-  const es = eyeShape(state);
-
-  // Animation classes per state
-  const bodyClass = state === 'excited' ? 'gh-jump'
+  // Body animation class
+  const bodyAnim =
+    state === 'excited' ? 'gh-jump'
     : state === 'sleepy' ? 'gh-breathe'
-    : state === 'music' ? 'gh-wobble'
+    : state === 'music'  ? 'gh-wobble'
+    : state === 'sad'    ? 'gh-peek'
+    : 'gh-popup';
+
+  const headAnim =
+    state === 'thinking' ? 'gh-wobble'
+    : state === 'music'  ? 'gh-nod'
     : '';
 
-  const headClass = state === 'thinking' ? 'gh-wobble'
-    : state === 'music' ? 'gh-nod'
-    : '';
+  // Eye variant
+  type EyeShape = 'normal' | 'happy' | 'half' | 'sad';
+  const eyeShape: EyeShape =
+    state === 'happy' || state === 'excited' || state === 'thumbsup' ? 'happy'
+    : state === 'sleepy' ? 'half'
+    : state === 'sad'    ? 'sad'
+    : 'normal';
 
-  const eyeClass = state === 'idle' ? 'gh-blink' : '';
-  const armRClass = state === 'waving' ? 'gh-wave' : '';
+  // Mouth
+  type MouthShape = 'big' | 'smile' | 'neutral' | 'down';
+  const mouthShape: MouthShape =
+    state === 'excited'   ? 'big'
+    : state === 'happy' || state === 'waving' || state === 'thumbsup' ? 'smile'
+    : state === 'sad'     ? 'down'
+    : 'neutral';
+
+  const clipId = `gh-clip-${state}`;
 
   return (
     <svg
-      viewBox="0 0 100 120"
+      viewBox="0 0 120 120"
       width={size}
-      height={size * 1.2}
+      height={size}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-label={`土拨鼠 - ${state}`}
+      style={{ overflow: 'visible' }}
     >
-      {/* ── Tail ── */}
-      <ellipse cx="22" cy="95" rx="11" ry="9" fill={C.body} className={bodyClass} />
-      <ellipse cx="22" cy="95" rx="8"  ry="6" fill={C.belly} />
+      <defs>
+        {/* Clip everything to the circle */}
+        <clipPath id={clipId}>
+          <circle cx="60" cy="60" r="54" />
+        </clipPath>
+      </defs>
 
-      {/* ── Body ── */}
-      <g className={bodyClass}>
-        <ellipse cx="50" cy="88" rx="28" ry="24" fill={C.body} />
-        <ellipse cx="50" cy="92" rx="18" ry="16" fill={C.belly} />
+      {/* ── White circle background ── */}
+      <circle cx="60" cy="60" r="55" fill={C.white} />
 
-        {/* Feet */}
-        <ellipse cx="36" cy="110" rx="10" ry="5" fill={C.dark} />
-        <ellipse cx="64" cy="110" rx="10" ry="5" fill={C.dark} />
+      {/* ── Clipped content ── */}
+      <g clipPath={`url(#${clipId})`}>
 
-        {/* Left arm (default down) */}
-        <g>
-          <path d="M24 82 Q18 90 20 98" stroke={C.body} strokeWidth="7" strokeLinecap="round" fill="none" />
-          <circle cx="20" cy="99" r="5" fill={C.body} />
+        {/* ── Groundhog body group — moves up/down based on state ── */}
+        <g
+          className={bodyAnim}
+          style={{ transform: `translateY(${py}px)`, transformOrigin: '60px 90px' }}
+        >
+
+          {/* Body (sits behind dirt, bottom portion hidden) */}
+          <ellipse cx="60" cy="94" rx="30" ry="22" fill={C.body} />
+          <ellipse cx="60" cy="98" rx="20" ry="14" fill={C.belly} />
+
+          {/* Left paw (gripping hole edge) */}
+          {state !== 'waving' && state !== 'excited' && state !== 'happy' && (
+            <g>
+              <path d="M32 84 Q26 78 28 70" stroke={C.body} strokeWidth="8" strokeLinecap="round" fill="none" />
+              <ellipse cx="28" cy="68" rx="6" ry="5" fill={C.body} />
+              <ellipse cx="28" cy="68" rx="4.5" ry="3.5" fill={C.bodyDk} />
+            </g>
+          )}
+          {/* Right paw default */}
+          {state !== 'waving' && state !== 'excited' && state !== 'happy' && state !== 'thumbsup' && (
+            <g>
+              <path d="M88 84 Q94 78 92 70" stroke={C.body} strokeWidth="8" strokeLinecap="round" fill="none" />
+              <ellipse cx="92" cy="68" rx="6" ry="5" fill={C.body} />
+              <ellipse cx="92" cy="68" rx="4.5" ry="3.5" fill={C.bodyDk} />
+            </g>
+          )}
+
+          {/* Waving — right arm up */}
+          {state === 'waving' && (
+            <>
+              <g>
+                <path d="M32 84 Q26 78 28 70" stroke={C.body} strokeWidth="8" strokeLinecap="round" fill="none" />
+                <ellipse cx="28" cy="68" rx="6" ry="5" fill={C.body} />
+              </g>
+              <g className="gh-wave" style={{ transformOrigin: '88px 80px' }}>
+                <path d="M88 84 Q94 72 90 56" stroke={C.body} strokeWidth="8" strokeLinecap="round" fill="none" />
+                <circle cx="90" cy="54" r="6" fill={C.body} />
+                {/* wave fingers */}
+                <path d="M87 50 Q91 44 95 47" stroke={C.belly} strokeWidth="2.5" strokeLinecap="round" fill="none" />
+                <path d="M90 52 Q95 47 98 51" stroke={C.belly} strokeWidth="2.5" strokeLinecap="round" fill="none" />
+              </g>
+            </>
+          )}
+
+          {/* Happy — both arms up */}
+          {state === 'happy' && (
+            <>
+              <g>
+                <path d="M32 84 Q24 70 26 56" stroke={C.body} strokeWidth="8" strokeLinecap="round" fill="none" />
+                <circle cx="26" cy="54" r="6" fill={C.body} />
+              </g>
+              <g>
+                <path d="M88 84 Q96 70 94 56" stroke={C.body} strokeWidth="8" strokeLinecap="round" fill="none" />
+                <circle cx="94" cy="54" r="6" fill={C.body} />
+              </g>
+            </>
+          )}
+
+          {/* Excited — arms raised high */}
+          {state === 'excited' && (
+            <>
+              <g>
+                <path d="M32 84 Q20 64 22 46" stroke={C.body} strokeWidth="8" strokeLinecap="round" fill="none" />
+                <circle cx="22" cy="44" r="6" fill={C.body} />
+              </g>
+              <g>
+                <path d="M88 84 Q100 64 98 46" stroke={C.body} strokeWidth="8" strokeLinecap="round" fill="none" />
+                <circle cx="98" cy="44" r="6" fill={C.body} />
+              </g>
+            </>
+          )}
+
+          {/* Thumbs up */}
+          {state === 'thumbsup' && (
+            <>
+              <g>
+                <path d="M32 84 Q26 78 28 70" stroke={C.body} strokeWidth="8" strokeLinecap="round" fill="none" />
+                <ellipse cx="28" cy="68" rx="6" ry="5" fill={C.body} />
+              </g>
+              <g>
+                <path d="M88 84 Q96 74 94 60" stroke={C.body} strokeWidth="8" strokeLinecap="round" fill="none" />
+                <circle cx="94" cy="58" r="6" fill={C.body} />
+                {/* thumb */}
+                <path d="M91 54 Q87 46 90 42" stroke={C.belly} strokeWidth="3.5" strokeLinecap="round" fill="none" />
+                <circle cx="90" cy="40" r="4" fill={C.belly} />
+              </g>
+            </>
+          )}
+
+          {/* Thinking — left arm up, paw at chin */}
+          {state === 'thinking' && (
+            <g>
+              <path d="M32 84 Q22 72 24 60" stroke={C.body} strokeWidth="8" strokeLinecap="round" fill="none" />
+              <circle cx="24" cy="58" r="6" fill={C.body} />
+            </g>
+          )}
+
+          {/* ── Head group ── */}
+          <g
+            className={headAnim}
+            style={{
+              transform: ht !== 0 ? `rotate(${ht}deg)` : undefined,
+              transformOrigin: '60px 60px',
+            }}
+          >
+            {/* Head */}
+            <circle cx="60" cy="54" r="28" fill={C.body} />
+
+            {/* Cheeks — wide round like the logo */}
+            <ellipse cx="40" cy="62" rx="9" ry="7" fill={C.bodyDk} opacity="0.35" />
+            <ellipse cx="80" cy="62" rx="9" ry="7" fill={C.bodyDk} opacity="0.35" />
+
+            {/* Face / muzzle area */}
+            <ellipse cx="60" cy="60" rx="20" ry="17" fill={C.belly} />
+
+            {/* Ears */}
+            {state === 'sad' ? (
+              <>
+                <ellipse cx="38" cy="32" rx="9" ry="11" fill={C.body} transform="rotate(20,38,32)" />
+                <ellipse cx="38" cy="32" rx="6" ry="7.5" fill={C.earIn} transform="rotate(20,38,32)" />
+                <ellipse cx="82" cy="32" rx="9" ry="11" fill={C.body} transform="rotate(-20,82,32)" />
+                <ellipse cx="82" cy="32" rx="6" ry="7.5" fill={C.earIn} transform="rotate(-20,82,32)" />
+              </>
+            ) : state === 'excited' ? (
+              <>
+                <ellipse cx="38" cy="28" rx="8" ry="13" fill={C.body} transform="rotate(-5,38,28)" />
+                <ellipse cx="38" cy="28" rx="5.5" ry="9" fill={C.earIn} transform="rotate(-5,38,28)" />
+                <ellipse cx="82" cy="28" rx="8" ry="13" fill={C.body} transform="rotate(5,82,28)" />
+                <ellipse cx="82" cy="28" rx="5.5" ry="9" fill={C.earIn} transform="rotate(5,82,28)" />
+              </>
+            ) : (
+              <>
+                <ellipse cx="38" cy="31" rx="9" ry="11" fill={C.body} transform="rotate(-8,38,31)" />
+                <ellipse cx="38" cy="31" rx="6" ry="7.5" fill={C.earIn} transform="rotate(-8,38,31)" />
+                <ellipse cx="82" cy="31" rx="9" ry="11" fill={C.body} transform="rotate(8,82,31)" />
+                <ellipse cx="82" cy="31" rx="6" ry="7.5" fill={C.earIn} transform="rotate(8,82,31)" />
+              </>
+            )}
+
+            {/* ── Eyes ── */}
+            {eyeShape === 'normal' && (
+              <g className="gh-blink" style={{ transformOrigin: '60px 52px' }}>
+                <circle cx="49" cy="52" r="6.5" fill={C.eye} />
+                <circle cx="71" cy="52" r="6.5" fill={C.eye} />
+                <circle cx="47" cy="50" r="2.2" fill={C.eyeHi} />
+                <circle cx="69" cy="50" r="2.2" fill={C.eyeHi} />
+                {/* sparkle */}
+                <circle cx="53" cy="55" r="1" fill={C.eyeHi} opacity="0.6" />
+                <circle cx="75" cy="55" r="1" fill={C.eyeHi} opacity="0.6" />
+              </g>
+            )}
+            {eyeShape === 'happy' && (
+              <>
+                {/* happy arc eyes — like logo smile */}
+                <path d="M43 53 Q49 46 55 53" stroke={C.eye} strokeWidth="3.5" strokeLinecap="round" fill="none" />
+                <path d="M65 53 Q71 46 77 53" stroke={C.eye} strokeWidth="3.5" strokeLinecap="round" fill="none" />
+              </>
+            )}
+            {eyeShape === 'half' && (
+              <>
+                <ellipse cx="49" cy="53" rx="6.5" ry="4" fill={C.eye} />
+                <ellipse cx="71" cy="53" rx="6.5" ry="4" fill={C.eye} />
+                <circle cx="47" cy="51" r="1.8" fill={C.eyeHi} />
+                <circle cx="69" cy="51" r="1.8" fill={C.eyeHi} />
+              </>
+            )}
+            {eyeShape === 'sad' && (
+              <>
+                <circle cx="49" cy="54" r="6" fill={C.eye} />
+                <circle cx="71" cy="54" r="6" fill={C.eye} />
+                <circle cx="47" cy="52" r="2" fill={C.eyeHi} />
+                <circle cx="69" cy="52" r="2" fill={C.eyeHi} />
+                {/* sad brows */}
+                <path d="M43 45 Q49 49 55 46" stroke={C.dark} strokeWidth="2.5" strokeLinecap="round" fill="none" />
+                <path d="M65 46 Q71 49 77 45" stroke={C.dark} strokeWidth="2.5" strokeLinecap="round" fill="none" />
+              </>
+            )}
+
+            {/* Blush cheeks (visible in happy/excited/waving) */}
+            {(state === 'happy' || state === 'excited' || state === 'waving') && (
+              <>
+                <ellipse cx="42" cy="63" rx="7" ry="4.5" fill={C.cheek} opacity="0.35" />
+                <ellipse cx="78" cy="63" rx="7" ry="4.5" fill={C.cheek} opacity="0.35" />
+              </>
+            )}
+
+            {/* ── Nose ── */}
+            <ellipse cx="60" cy="63" rx="5" ry="3.5" fill={C.nose} />
+            <ellipse cx="59" cy="62" rx="2" ry="1.2" fill={C.body} opacity="0.3" />
+
+            {/* ── Mouth ── */}
+            {mouthShape === 'big' && (
+              <>
+                <path d="M48 68 Q60 78 72 68" stroke={C.nose} strokeWidth="2.2" strokeLinecap="round" fill="none" />
+                {/* teeth */}
+                <rect x="54" y="68" width="5" height="6.5" rx="1.5" fill={C.teeth} />
+                <rect x="61" y="68" width="5" height="6.5" rx="1.5" fill={C.teeth} />
+              </>
+            )}
+            {mouthShape === 'smile' && (
+              <>
+                <path d="M50 68 Q60 76 70 68" stroke={C.nose} strokeWidth="2" strokeLinecap="round" fill="none" />
+                {/* two front teeth */}
+                <rect x="55" y="68" width="4.5" height="5.5" rx="1.2" fill={C.teeth} />
+                <rect x="60.5" y="68" width="4.5" height="5.5" rx="1.2" fill={C.teeth} />
+              </>
+            )}
+            {mouthShape === 'neutral' && (
+              <path d="M52 68 Q60 72 68 68" stroke={C.nose} strokeWidth="1.8" strokeLinecap="round" fill="none" />
+            )}
+            {mouthShape === 'down' && (
+              <path d="M52 71 Q60 67 68 71" stroke={C.nose} strokeWidth="2" strokeLinecap="round" fill="none" />
+            )}
+
+            {/* ── Whiskers ── */}
+            <path d="M34 62 L48 63" stroke={C.dark} strokeWidth="1" strokeLinecap="round" opacity="0.4" />
+            <path d="M34 65 L48 65.5" stroke={C.dark} strokeWidth="1" strokeLinecap="round" opacity="0.4" />
+            <path d="M72 63 L86 62" stroke={C.dark} strokeWidth="1" strokeLinecap="round" opacity="0.4" />
+            <path d="M72 65.5 L86 65" stroke={C.dark} strokeWidth="1" strokeLinecap="round" opacity="0.4" />
+
+            {/* ── Headphones (music) ── */}
+            {state === 'music' && (
+              <>
+                <path d="M24 48 Q24 22 60 22 Q96 22 96 48" stroke={C.brand} strokeWidth="4.5" fill="none" strokeLinecap="round" />
+                <rect x="16" y="46" width="13" height="17" rx="5.5" fill={C.brand} />
+                <rect x="91" y="46" width="13" height="17" rx="5.5" fill={C.brand} />
+              </>
+            )}
+
+            {/* ── Thinking bubbles ── */}
+            {state === 'thinking' && (
+              <g className="gh-pulse-anim">
+                <circle cx="78" cy="34" r="3.5" fill={C.brand} opacity="0.7" />
+                <circle cx="86" cy="26" r="2.5" fill={C.brand} opacity="0.5" />
+                <circle cx="91" cy="19" r="1.8" fill={C.brand} opacity="0.3" />
+              </g>
+            )}
+
+            {/* ── Excited stars ── */}
+            {state === 'excited' && (
+              <g className="gh-pulse-anim">
+                <text x="86" y="26" fontSize="12" fill={C.gold}>✦</text>
+                <text x="14" y="30" fontSize="9" fill={C.gold}>✦</text>
+                <text x="8" y="50" fontSize="7" fill={C.gold}>✦</text>
+              </g>
+            )}
+          </g>
         </g>
 
-        {/* Right arm - waving or thumbsup or default */}
-        {state === 'waving' && (
-          <g className={armRClass} style={{ transformOrigin: '76px 78px' }}>
-            <path d="M76 78 Q86 66 82 56" stroke={C.body} strokeWidth="7" strokeLinecap="round" fill="none" />
-            <circle cx="82" cy="54" r="5" fill={C.body} />
-            {/* wave fingers */}
-            <path d="M80 50 Q83 44 87 46" stroke={C.belly} strokeWidth="2.5" strokeLinecap="round" fill="none" />
-            <path d="M83 52 Q87 47 90 50" stroke={C.belly} strokeWidth="2.5" strokeLinecap="round" fill="none" />
-          </g>
-        )}
-        {state === 'thumbsup' && (
-          <g>
-            <path d="M76 82 Q88 74 86 62" stroke={C.body} strokeWidth="7" strokeLinecap="round" fill="none" />
-            <circle cx="85" cy="60" r="5" fill={C.body} />
-            {/* thumb */}
-            <path d="M82 58 Q78 50 81 46" stroke={C.belly} strokeWidth="3" strokeLinecap="round" fill="none" />
-            <circle cx="81" cy="44" r="3.5" fill={C.belly} />
-          </g>
-        )}
-        {state !== 'waving' && state !== 'thumbsup' && (
-          <g>
-            <path d="M76 82 Q82 90 80 98" stroke={C.body} strokeWidth="7" strokeLinecap="round" fill="none" />
-            <circle cx="80" cy="99" r="5" fill={C.body} />
-          </g>
-        )}
+        {/* ── Dirt mound — drawn OVER the body, creates hole illusion ── */}
+        {/* Dark hole shadow */}
+        <ellipse cx="60" cy="89" rx="40" ry="11" fill={C.dirtDk} opacity="0.55" />
+        {/* Main dirt surface */}
+        <path
+          d="M4 94 Q18 80 40 84 Q60 87 80 84 Q102 80 116 94 L116 130 L4 130 Z"
+          fill={C.dirt}
+        />
+        {/* Dirt highlight (lighter ridge at top of mound) */}
+        <path
+          d="M8 94 Q22 83 42 86.5 Q60 89.5 78 86.5 Q98 83 112 94"
+          stroke={C.dirtLt}
+          strokeWidth="3"
+          strokeLinecap="round"
+          fill="none"
+          opacity="0.6"
+        />
+        {/* Small dirt clumps for texture */}
+        <circle cx="28" cy="90" r="4" fill={C.dirtDk} opacity="0.4" />
+        <circle cx="92" cy="89" r="3.5" fill={C.dirtDk} opacity="0.35" />
+        <circle cx="45" cy="93" r="2.5" fill={C.dirtDk} opacity="0.3" />
+        <circle cx="76" cy="92" r="2" fill={C.dirtDk} opacity="0.3" />
 
-        {/* Thinking pose: left arm raised with paw on chin */}
-        {state === 'thinking' && (
-          <g>
-            <path d="M24 80 Q16 70 20 62" stroke={C.body} strokeWidth="7" strokeLinecap="round" fill="none" />
-            <circle cx="20" cy="60" r="5.5" fill={C.body} />
-          </g>
-        )}
+      </g>{/* end clipPath */}
 
-        {/* Happy: both arms raised */}
-        {state === 'happy' && (
-          <>
-            <path d="M24 78 Q14 66 16 54" stroke={C.body} strokeWidth="7" strokeLinecap="round" fill="none" />
-            <circle cx="16" cy="52" r="5" fill={C.body} />
-            <path d="M76 78 Q86 66 84 54" stroke={C.body} strokeWidth="7" strokeLinecap="round" fill="none" />
-            <circle cx="84" cy="52" r="5" fill={C.body} />
-          </>
-        )}
+      {/* ── Ring border (drawn last, on top of everything) ── */}
+      <circle cx="60" cy="60" r="55" stroke={C.ring} strokeWidth="5.5" fill="none" />
 
-        {/* Excited: arms raised high */}
-        {state === 'excited' && (
-          <>
-            <path d="M24 75 Q12 58 14 44" stroke={C.body} strokeWidth="7" strokeLinecap="round" fill="none" />
-            <circle cx="14" cy="42" r="5" fill={C.body} />
-            <path d="M76 75 Q88 58 86 44" stroke={C.body} strokeWidth="7" strokeLinecap="round" fill="none" />
-            <circle cx="86" cy="42" r="5" fill={C.body} />
-          </>
-        )}
-      </g>
-
-      {/* ── Head group ── */}
-      <g
-        className={headClass}
-        style={{ transformOrigin: '50px 56px' }}
-        transform={hr !== 0 ? `rotate(${hr}, 50, 56)` : undefined}
-      >
-        {/* Head */}
-        <circle cx="50" cy="48" r="28" fill={C.body} />
-        {/* Face */}
-        <ellipse cx="50" cy="52" rx="19" ry="16" fill={C.belly} />
-
-        {/* Ears */}
-        {state === 'sad' ? (
-          <>
-            <ellipse cx="28" cy="26" rx="8" ry="10" fill={C.ear} transform="rotate(30,28,26)" />
-            <ellipse cx="28" cy="26" rx="5" ry="7" fill={C.earIn} transform="rotate(30,28,26)" />
-            <ellipse cx="72" cy="26" rx="8" ry="10" fill={C.ear} transform="rotate(-30,72,26)" />
-            <ellipse cx="72" cy="26" rx="5" ry="7" fill={C.earIn} transform="rotate(-30,72,26)" />
-          </>
-        ) : (
-          <>
-            <ellipse cx="28" cy="24" rx="8" ry="11" fill={C.ear} transform="rotate(-10,28,24)" />
-            <ellipse cx="28" cy="24" rx="5" ry="7.5" fill={C.earIn} transform="rotate(-10,28,24)" />
-            <ellipse cx="72" cy="24" rx="8" ry="11" fill={C.ear} transform="rotate(10,72,24)" />
-            <ellipse cx="72" cy="24" rx="5" ry="7.5" fill={C.earIn} transform="rotate(10,72,24)" />
-          </>
-        )}
-
-        {/* Excited ears extra tall */}
-        {state === 'excited' && (
-          <>
-            <ellipse cx="28" cy="20" rx="7" ry="13" fill={C.ear} transform="rotate(-5,28,20)" />
-            <ellipse cx="72" cy="20" rx="7" ry="13" fill={C.ear} transform="rotate(5,72,20)" />
-          </>
-        )}
-
-        {/* Eyes */}
-        {es === 'normal' && (
-          <g className={eyeClass} style={{ transformOrigin: '50px 48px' }}>
-            <circle cx="40" cy="46" r="5.5" fill={C.eye} />
-            <circle cx="60" cy="46" r="5.5" fill={C.eye} />
-            <circle cx="38.5" cy="44.5" r="1.8" fill={C.eyehi} />
-            <circle cx="58.5" cy="44.5" r="1.8" fill={C.eyehi} />
-          </g>
-        )}
-        {es === 'curved' && (
-          <>
-            <path d="M36 47 Q40 42 44 47" stroke={C.eye} strokeWidth="3" strokeLinecap="round" fill="none" />
-            <path d="M56 47 Q60 42 64 47" stroke={C.eye} strokeWidth="3" strokeLinecap="round" fill="none" />
-          </>
-        )}
-        {es === 'half' && (
-          <>
-            <path d="M35 47 Q40 44 45 47" stroke={C.eye} strokeWidth="3.5" strokeLinecap="round" fill="none" />
-            <ellipse cx="40" cy="47" rx="5" ry="2.5" fill={C.eye} />
-            <path d="M55 47 Q60 44 65 47" stroke={C.eye} strokeWidth="3.5" strokeLinecap="round" fill="none" />
-            <ellipse cx="60" cy="47" rx="5" ry="2.5" fill={C.eye} />
-          </>
-        )}
-        {es === 'sad' && (
-          <>
-            <ellipse cx="40" cy="48" rx="5" ry="4" fill={C.eye} />
-            <ellipse cx="60" cy="48" rx="5" ry="4" fill={C.eye} />
-            <circle cx="38.5" cy="46.5" r="1.5" fill={C.eyehi} />
-            <circle cx="58.5" cy="46.5" r="1.5" fill={C.eyehi} />
-            {/* sad eyebrows */}
-            <path d="M35 40 Q40 43 45 41" stroke={C.dark} strokeWidth="2" strokeLinecap="round" fill="none" />
-            <path d="M55 41 Q60 43 65 40" stroke={C.dark} strokeWidth="2" strokeLinecap="round" fill="none" />
-          </>
-        )}
-
-        {/* Nose */}
-        <ellipse cx="50" cy="54" rx="4.5" ry="3" fill={C.nose} />
-
-        {/* Mouth */}
-        {state === 'happy' || state === 'excited' || state === 'thumbsup' ? (
-          <path d="M43 59 Q50 65 57 59" stroke={C.dark} strokeWidth="2" strokeLinecap="round" fill="none" />
-        ) : state === 'sad' ? (
-          <path d="M43 62 Q50 58 57 62" stroke={C.dark} strokeWidth="2" strokeLinecap="round" fill="none" />
-        ) : state === 'waving' ? (
-          <path d="M44 58 Q50 63 56 58" stroke={C.dark} strokeWidth="2" strokeLinecap="round" fill="none" />
-        ) : (
-          <path d="M44 59 Q50 62 56 59" stroke={C.dark} strokeWidth="1.8" strokeLinecap="round" fill="none" />
-        )}
-
-        {/* Whiskers */}
-        <path d="M30 53 L44 54" stroke={C.dark} strokeWidth="1" strokeLinecap="round" opacity="0.5" />
-        <path d="M30 56 L44 56.5" stroke={C.dark} strokeWidth="1" strokeLinecap="round" opacity="0.5" />
-        <path d="M56 54 L70 53" stroke={C.dark} strokeWidth="1" strokeLinecap="round" opacity="0.5" />
-        <path d="M56 56.5 L70 56" stroke={C.dark} strokeWidth="1" strokeLinecap="round" opacity="0.5" />
-
-        {/* Headphones (music state) */}
-        {state === 'music' && (
-          <>
-            <path d="M22 42 Q22 18 50 18 Q78 18 78 42" stroke={C.brand} strokeWidth="4" fill="none" strokeLinecap="round" />
-            <rect x="16" y="40" width="12" height="16" rx="5" fill={C.brand} />
-            <rect x="72" y="40" width="12" height="16" rx="5" fill={C.brand} />
-          </>
-        )}
-
-        {/* Thinking dots */}
-        {state === 'thinking' && (
-          <g className="gh-pulse-anim">
-            <circle cx="74" cy="28" r="3" fill={C.brand} opacity="0.7" />
-            <circle cx="82" cy="20" r="2.2" fill={C.brand} opacity="0.5" />
-            <circle cx="87" cy="13" r="1.5" fill={C.brand} opacity="0.3" />
-          </g>
-        )}
-
-        {/* Excited stars */}
-        {state === 'excited' && (
-          <>
-            <text x="72" y="22" fontSize="10" fill={C.gold} className="gh-pulse-anim">✦</text>
-            <text x="15" y="26" fontSize="8"  fill={C.gold} className="gh-pulse-anim">✦</text>
-          </>
-        )}
-      </g>
     </svg>
   );
 }
 
-// ── Loading variant (digging animation) ──────────────────────────────
+// ── Loading variant ───────────────────────────────────────────────────
 
 export function GroundhogLoading({ text = '正在思考中...' }: { text?: string }) {
   return (
     <div className="flex flex-col items-center gap-3">
-      <div className="relative">
-        <svg viewBox="0 0 100 80" width={80} height={64} fill="none">
-          {/* Ground line */}
-          <path d="M10 65 Q50 62 90 65" stroke="#8B6040" strokeWidth="3" strokeLinecap="round" />
-          {/* Hole */}
-          <ellipse cx="50" cy="65" rx="18" ry="6" fill="#5A3825" opacity="0.4" />
-          {/* Groundhog body digging */}
+      <svg viewBox="0 0 120 120" width={80} height={80} fill="none">
+        <defs>
+          <clipPath id="gh-load-clip">
+            <circle cx="60" cy="60" r="54" />
+          </clipPath>
+        </defs>
+
+        <circle cx="60" cy="60" r="55" fill="#FFFFFF" />
+        <g clipPath="url(#gh-load-clip)">
+          {/* Body digging */}
           <g className="gh-dig">
-            <ellipse cx="50" cy="52" rx="16" ry="18" fill="#8B6040" />
-            <ellipse cx="50" cy="56" rx="10" ry="11" fill="#C49A6C" />
-            <circle cx="50" cy="38" r="16" fill="#8B6040" />
-            <ellipse cx="50" cy="41" rx="11" ry="9" fill="#C49A6C" />
-            {/* eyes */}
-            <circle cx="44" cy="38" r="3.5" fill="#1A0F0A" />
-            <circle cx="56" cy="38" r="3.5" fill="#1A0F0A" />
-            <circle cx="43" cy="37" r="1.2" fill="white" />
-            <circle cx="55" cy="37" r="1.2" fill="white" />
-            {/* nose */}
-            <ellipse cx="50" cy="43" rx="3" ry="2" fill="#D4857A" />
-            {/* dirt */}
-            <circle cx="32" cy="58" r="3" fill="#8B6040" opacity="0.5" />
-            <circle cx="68" cy="56" r="2.5" fill="#8B6040" opacity="0.4" />
-            <circle cx="38" cy="60" r="2" fill="#8B6040" opacity="0.3" />
+            <ellipse cx="60" cy="90" rx="26" ry="18" fill="#A0652A" />
+            <ellipse cx="60" cy="94" rx="17" ry="12" fill="#C89450" />
+            {/* Head */}
+            <circle cx="60" cy="56" r="26" fill="#A0652A" />
+            <ellipse cx="60" cy="62" rx="18" ry="15" fill="#C89450" />
+            {/* Eyes */}
+            <circle cx="50" cy="53" r="5.5" fill="#1A0A00" />
+            <circle cx="70" cy="53" r="5.5" fill="#1A0A00" />
+            <circle cx="48" cy="51" r="2" fill="white" />
+            <circle cx="68" cy="51" r="2" fill="white" />
+            {/* Nose */}
+            <ellipse cx="60" cy="63" rx="4" ry="3" fill="#3D2010" />
+            {/* Sweat drops (thinking hard) */}
+            <ellipse cx="82" cy="44" rx="3" ry="4.5" fill="#7AB4E8" opacity="0.7" className="gh-pulse-anim" />
+            <ellipse cx="88" cy="34" rx="2" ry="3.5" fill="#7AB4E8" opacity="0.5" className="gh-pulse-anim" />
           </g>
-        </svg>
-      </div>
+
+          {/* Dirt */}
+          <ellipse cx="60" cy="89" rx="40" ry="10" fill="#5A3210" opacity="0.5" />
+          <path d="M4 94 Q20 80 60 85 Q100 80 116 94 L116 130 L4 130 Z" fill="#7B4721" />
+          <path d="M8 94 Q24 83 60 87 Q96 83 112 94" stroke="#9B6030" strokeWidth="3" strokeLinecap="round" fill="none" opacity="0.6" />
+          {/* Dirt clumps flying */}
+          <circle cx="22" cy="78" r="4" fill="#7B4721" opacity="0.5" className="gh-pulse-anim" />
+          <circle cx="96" cy="76" r="3" fill="#7B4721" opacity="0.4" className="gh-pulse-anim" />
+          <circle cx="35" cy="72" r="2.5" fill="#7B4721" opacity="0.35" className="gh-pulse-anim" />
+        </g>
+
+        <circle cx="60" cy="60" r="55" stroke="#7B4721" strokeWidth="5.5" fill="none" />
+      </svg>
       <p className="text-xs text-gray-400">{text}</p>
     </div>
   );
