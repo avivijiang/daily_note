@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { migrateLocalDataToCloud } from '@/lib/sync';
-import { Groundhog } from '@/components/Groundhog';
 
 interface MigrationModalProps {
   onDone: () => void;
@@ -22,7 +21,7 @@ export function MigrationModal({ onDone }: MigrationModalProps) {
       .then(() => {
         if (!cancelled) {
           setFinished(true);
-          setTimeout(onDone, 1800);
+          setTimeout(onDone, 2000);
         }
       })
       .catch((err) => {
@@ -36,44 +35,47 @@ export function MigrationModal({ onDone }: MigrationModalProps) {
   const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl border border-[#E8E4DA] w-80 p-6 text-center">
-        <div className="flex justify-center mb-4">
-          <Groundhog state={finished ? 'excited' : 'waving'} size={72} />
+    <div className="fixed bottom-5 right-5 z-50 w-64 bg-white rounded-2xl shadow-lg border border-[#E8E4DA] p-4 slide-up">
+      {finished ? (
+        <div className="flex items-center gap-3">
+          <span className="text-lg">✅</span>
+          <div>
+            <p className="text-sm font-medium text-[#1A3A5C]">数据同步完成</p>
+            <p className="text-xs text-gray-400">已备份到云端</p>
+          </div>
         </div>
-
-        {finished ? (
-          <>
-            <p className="font-semibold text-[#1A3A5C]">同步完成！</p>
-            <p className="text-sm text-gray-400 mt-1">你的数据已安全备份到云端</p>
-          </>
-        ) : error ? (
-          <>
-            <p className="font-semibold text-red-500">上传出错</p>
-            <p className="text-xs text-gray-400 mt-1 break-all">{error}</p>
+      ) : error ? (
+        <div className="flex items-start gap-3">
+          <span className="text-lg">⚠️</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-red-500">同步出错</p>
+            <p className="text-xs text-gray-400 truncate">{error}</p>
             <button
               onClick={onDone}
-              className="mt-4 px-4 py-2 bg-[#1A3A5C] text-white text-sm rounded-xl"
+              className="mt-2 text-xs text-[#1A3A5C] underline"
             >
               跳过
             </button>
-          </>
-        ) : (
-          <>
-            <p className="font-semibold text-[#1A3A5C]">正在上传本地数据</p>
-            <p className="text-xs text-gray-400 mt-1">{progress.label}</p>
-            <div className="mt-4 h-2 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-[#1A3A5C] rounded-full transition-all duration-300"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            {progress.total > 0 && (
-              <p className="text-xs text-gray-400 mt-1">{progress.done} / {progress.total}</p>
-            )}
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-3 h-3 rounded-full bg-[#1A3A5C] animate-pulse shrink-0" />
+            <p className="text-sm font-medium text-[#1A3A5C]">正在同步数据…</p>
+          </div>
+          <p className="text-xs text-gray-400 mb-2 truncate">{progress.label}</p>
+          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-[#1A3A5C] rounded-full transition-all duration-300"
+              style={{ width: progress.total > 0 ? `${pct}%` : '30%' }}
+            />
+          </div>
+          {progress.total > 0 && (
+            <p className="text-xs text-gray-400 mt-1 text-right">{progress.done}/{progress.total}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
