@@ -1,6 +1,7 @@
 'use client';
 
 import { formatDate, getWeekDays, addDays, todayStr } from '@/lib/utils';
+import Image from 'next/image';
 import Link from 'next/link';
 import { UserMenu } from '@/components/UserMenu';
 
@@ -24,8 +25,7 @@ export function Header({ currentDate, onDateChange, onSettingsClick, onGoalsClic
       <div className="max-w-[1200px] mx-auto px-4 h-14 flex items-center gap-4">
         {/* Groundhog logo + date title */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="土拨鼠日记" className="w-8 h-8 object-contain" />
+          <Image src="/logo.png" alt="土拨鼠日记" width={32} height={32} className="object-contain" />
           <div
             className="text-base font-semibold text-[#1A3A5C] whitespace-nowrap"
             style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
