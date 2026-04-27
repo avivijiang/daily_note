@@ -81,12 +81,12 @@ function PersonaTabs({
   onEdit: (id: string) => void;
 }) {
   return (
-    <div className="flex gap-1.5 overflow-x-auto pb-1 shrink-0" style={{ scrollbarWidth: 'none' }}>
+    <div className="flex flex-wrap gap-1.5">
       {personas.map((p) => (
         <button
           key={p.id}
           onClick={() => onSelect(p.id)}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap shrink-0 group"
+          className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap"
           style={{
             backgroundColor: activeId === p.id ? p.color : 'transparent',
             color: activeId === p.id ? '#fff' : p.color,
@@ -104,7 +104,7 @@ function PersonaTabs({
       ))}
       <button
         onClick={onAdd}
-        className="px-3 py-1.5 rounded-full text-xs text-gray-400 border border-dashed border-gray-200 hover:border-gray-400 hover:text-gray-500 transition-colors whitespace-nowrap shrink-0"
+        className="px-3 py-1.5 rounded-full text-xs text-gray-400 border border-dashed border-gray-200 hover:border-gray-400 hover:text-gray-500 transition-colors whitespace-nowrap"
       >
         + 自定义
       </button>
@@ -237,7 +237,10 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
       };
       onAnalysisUpdate(analysis);
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') return;
+      if (err instanceof Error && err.name === 'AbortError') {
+        setPhase(rawText.length > 0 ? 'complete' : 'idle');
+        return;
+      }
       setPhase('error');
       setErrorMsg(err instanceof Error ? err.message : '未知错误');
     }
@@ -324,7 +327,15 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
         return copy;
       });
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') return;
+      if (err instanceof Error && err.name === 'AbortError') {
+        // Stop button clicked — keep whatever text was streamed, clear streaming flag
+        setChatMessages((prev) => {
+          const copy = [...prev];
+          copy[copy.length - 1] = { ...copy[copy.length - 1], streaming: false };
+          return copy;
+        });
+        return;
+      }
       setChatMessages((prev) => {
         const copy = [...prev];
         copy[copy.length - 1] = {
@@ -371,6 +382,15 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
           ← 返回
         </button>
         <div className="flex items-center gap-3">
+          {phase === 'streaming' && (
+            <button
+              onClick={() => abortRef.current?.abort()}
+              className="text-xs text-red-500 font-medium px-3 py-1 rounded-lg border border-red-200 hover:bg-red-50 transition-colors"
+              style={{ backgroundColor: '#FAF8F3' }}
+            >
+              停止
+            </button>
+          )}
           {phase === 'complete' && (
             <button
               onClick={startAnalysis}
@@ -558,12 +578,12 @@ export function AnalysisView({ data, onBack, onAnalysisUpdate }: AnalysisViewPro
               style={{ minHeight: 40, maxHeight: 100, lineHeight: '1.5' }}
             />
             <button
-              onClick={sendChat}
-              disabled={!chatInput.trim() || chatStreaming}
+              onClick={chatStreaming ? () => chatAbortRef.current?.abort() : sendChat}
+              disabled={!chatStreaming && !chatInput.trim()}
               className="w-10 h-10 rounded-xl flex items-center justify-center text-white transition-all disabled:opacity-30 shrink-0"
-              style={{ backgroundColor: '#1A3A5C' }}
+              style={{ backgroundColor: chatStreaming ? '#ef4444' : '#1A3A5C' }}
             >
-              ↑
+              {chatStreaming ? '■' : '↑'}
             </button>
           </div>
         </div>

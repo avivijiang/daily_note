@@ -5,15 +5,36 @@
 export interface ModelConfig {
   id: string;
   name: string;
+  group: string;
+  badge?: string; // e.g. '推荐' | '思维链'
 }
 
 export const MODEL_LIST: ModelConfig[] = [
-  { id: 'anthropic/claude-sonnet-4-5',              name: 'Claude 3.5 Sonnet' },
-  { id: 'openai/gpt-4o',                            name: 'GPT-4o' },
-  { id: 'deepseek/deepseek-chat',                   name: 'DeepSeek V3' },
-  { id: 'google/gemini-2.0-flash-001',              name: 'Gemini 2.0 Flash' },
-  { id: 'meta-llama/llama-3.3-70b-instruct',        name: 'Llama 3.3 70B' },
-  { id: 'mistralai/mistral-small-3.1-24b-instruct', name: 'Mistral Small' },
+  // ── 千问 (Qwen / Alibaba) ──────────────────────────────────────
+  { id: 'qwen/qwen-max',           name: 'Qwen-Max',        group: '千问', badge: '推荐' },
+  { id: 'qwen/qwen3-235b-a22b',    name: 'Qwen3 235B',      group: '千问' },
+  { id: 'qwen/qwen-plus',          name: 'Qwen-Plus',       group: '千问' },
+
+  // ── DeepSeek ───────────────────────────────────────────────────
+  { id: 'deepseek/deepseek-chat-v3-0324', name: 'DeepSeek V3',  group: 'DeepSeek', badge: '推荐' },
+  { id: 'deepseek/deepseek-r1',           name: 'DeepSeek R1',  group: 'DeepSeek', badge: '思维链' },
+
+  // ── 豆包 (ByteDance Seed) ──────────────────────────────────────
+  { id: 'bytedance-seed/seed-1.6',       name: 'Seed 1.6',       group: '豆包', badge: '推荐' },
+  { id: 'bytedance-seed/seed-1.6-flash', name: 'Seed 1.6 Flash', group: '豆包' },
+
+  // ── 智谱 GLM ──────────────────────────────────────────────────
+  { id: 'z-ai/glm-4.5', name: 'GLM-4.5', group: '智谱', badge: '推荐' },
+  { id: 'z-ai/glm-4.6', name: 'GLM-4.6', group: '智谱' },
+
+  // ── OpenAI ────────────────────────────────────────────────────
+  { id: 'openai/gpt-4.1',    name: 'GPT-4.1',    group: 'OpenAI', badge: '推荐' },
+  { id: 'openai/gpt-4o',     name: 'GPT-4o',     group: 'OpenAI' },
+  { id: 'openai/gpt-4o-mini',name: 'GPT-4o Mini',group: 'OpenAI' },
+
+  // ── Claude ────────────────────────────────────────────────────
+  { id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5', group: 'Claude', badge: '推荐' },
+  { id: 'anthropic/claude-haiku-4.5',  name: 'Claude Haiku 4.5',  group: 'Claude' },
 ];
 
 // ── Storage keys ──────────────────────────────────────────────────────

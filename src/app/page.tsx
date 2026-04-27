@@ -229,6 +229,10 @@ export default function Home() {
     window.location.href = '/auth';
   };
 
+  const handleSyncComplete = useCallback(() => {
+    mergeCloudIntoLocal().then(() => setDiaryData(loadDiary(currentDate)));
+  }, [currentDate]);
+
   // Cache AI greeting into today's diary
   const handleGreetingGenerated = useCallback((text: string) => {
     const today = todayStr();
@@ -255,7 +259,7 @@ export default function Home() {
         onLogoClick={handleLogoClick}
         activeModelName={activeModelName}
         onLoginRequest={handleLoginRequest}
-        onSyncComplete={() => mergeCloudIntoLocal().then(() => setDiaryData(loadDiary(currentDate)))}
+        onSyncComplete={handleSyncComplete}
       />
 
       {/* Inner column: takes all height below header, splits between content and music bar */}

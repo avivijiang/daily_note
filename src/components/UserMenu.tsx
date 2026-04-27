@@ -16,6 +16,9 @@ export function UserMenu({ onLoginRequest, onSyncComplete }: UserMenuProps) {
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Keep latest callback in a ref so the effect never needs to re-run when it changes
+  const onSyncCompleteRef = useRef(onSyncComplete);
+  useEffect(() => { onSyncCompleteRef.current = onSyncComplete; });
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
@@ -25,13 +28,14 @@ export function UserMenu({ onLoginRequest, onSyncComplete }: UserMenuProps) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (session?.user && onSyncComplete) {
-        onSyncComplete();
+      if (session?.user) {
+        onSyncCompleteRef.current?.();
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [onSyncComplete]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Close menu on outside click
   useEffect(() => {

@@ -47,8 +47,16 @@ function enqueue(item: Omit<SyncQueueItem, 'id' | 'createdAt' | 'retryCount'>) {
 
 async function getSession() {
   if (!isSupabaseConfigured()) return null;
-  const { data } = await createClient().auth.getSession();
-  return data.session;
+  try {
+    const { data } = await createClient().auth.getSession();
+    return data.session;
+  } catch (e) {
+    // Web Locks race condition: another request stole the lock, treat as no session
+    if (e instanceof Error && (e.name === 'AbortError' || e.message.includes('steal'))) {
+      return null;
+    }
+    throw e;
+  }
 }
 
 // ── Diary sync ───────────────────────────────────────────────────────────
@@ -179,7 +187,21 @@ export async function mergeCloudIntoLocal(): Promise<void> {
 
 // ── First-time migration ─────────────────────────────────────────────────
 
+let _migrating = false;
+
 export async function migrateLocalDataToCloud(
+  onProgress?: (done: number, total: number, label: string) => void
+): Promise<void> {
+  if (_migrating) return; // prevent concurrent calls
+  _migrating = true;
+  try {
+    await _doMigrate(onProgress);
+  } finally {
+    _migrating = false;
+  }
+}
+
+async function _doMigrate(
   onProgress?: (done: number, total: number, label: string) => void
 ): Promise<void> {
   const session = await getSession();

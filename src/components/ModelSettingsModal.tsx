@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import {
   MODEL_LIST,
+  ModelConfig,
   getORKey,
   setORKey,
   clearORKey,
@@ -169,28 +170,53 @@ export function ModelSettingsModal({ onClose, onSaved, hint }: ModelSettingsModa
         {/* Model selector */}
         <div className="px-5 pb-3 overflow-y-auto">
           <p className="text-xs font-medium text-gray-500 mb-2">选择模型</p>
-          <div className="space-y-1.5">
-            {MODEL_LIST.map((m) => {
-              const isActive = activeId === m.id;
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => handleSetActive(m.id)}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all"
-                  style={{
-                    backgroundColor: isActive ? '#F5F8FF' : '#FAFAFA',
-                    border: `1.5px solid ${isActive ? '#1A3A5C33' : '#f0f0f0'}`,
-                    color: isActive ? '#1A3A5C' : '#555',
-                  }}
-                >
-                  <span className="font-medium">{m.name}</span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-gray-400 font-mono">{m.id}</span>
-                    {isActive && <span className="text-[10px] text-[#1A3A5C]">✓</span>}
-                  </span>
-                </button>
-              );
-            })}
+          <div className="space-y-3">
+            {Object.entries(
+              MODEL_LIST.reduce<Record<string, ModelConfig[]>>((acc, m) => {
+                (acc[m.group] ??= []).push(m);
+                return acc;
+              }, {})
+            ).map(([group, models]) => (
+              <div key={group}>
+                <p className="text-[10px] font-semibold text-gray-400 tracking-widest mb-1 px-1">{group}</p>
+                <div className="space-y-1">
+                  {models.map((m) => {
+                    const isActive = activeId === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => handleSetActive(m.id)}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all"
+                        style={{
+                          backgroundColor: isActive ? '#F5F8FF' : '#FAFAFA',
+                          border: `1.5px solid ${isActive ? '#1A3A5C33' : '#f0f0f0'}`,
+                          color: isActive ? '#1A3A5C' : '#555',
+                        }}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <span className="font-medium">{m.name}</span>
+                          {m.badge && (
+                            <span
+                              className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
+                              style={{
+                                backgroundColor: m.badge === '思维链' ? '#FFF4E5' : '#EEF4FF',
+                                color: m.badge === '思维链' ? '#C07000' : '#1A3A5C',
+                              }}
+                            >
+                              {m.badge}
+                            </span>
+                          )}
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-gray-300 font-mono hidden sm:inline">{m.id}</span>
+                          {isActive && <span className="text-[10px] text-[#1A3A5C]">✓</span>}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
