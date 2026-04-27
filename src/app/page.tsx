@@ -22,6 +22,9 @@ import { GoalPanel } from '@/components/GoalPanel';
 import { Groundhog } from '@/components/Groundhog';
 import { MusicPlayer } from '@/components/MusicPlayer';
 import { MeditationMode } from '@/components/MeditationMode';
+import { MigrationModal } from '@/components/MigrationModal';
+import { syncDiary, mergeCloudIntoLocal } from '@/lib/sync';
+import { isSupabaseConfigured, createClient } from '@/lib/supabase/client';
 
 const shownQuoteDates = new Set<string>();
 
@@ -43,6 +46,8 @@ export default function Home() {
   const [showMeditation, setShowMeditation] = useState(false);
 
   const [activeModelName, setActiveModelName] = useState('');
+  const [showMigration, setShowMigration] = useState(false);
+  const migrationCheckedRef = useRef(false);
 
   // Groundhog state
   const [ghEmotion, setGhEmotion] = useState<import('@/lib/groundhog').GroundhogEmotion>('idle');
@@ -60,6 +65,27 @@ export default function Home() {
   useEffect(() => {
     setMounted(true);
     setActiveModelName(getActiveModel().name);
+
+    // Listen for auth state changes to trigger migration + cloud merge
+    if (!isSupabaseConfigured()) return;
+    const supabase = createClient();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session && !migrationCheckedRef.current) {
+        migrationCheckedRef.current = true;
+        // Check if this user has any cloud data; if not, offer to migrate local data
+        const hasDiaries = Object.keys(localStorage).some((k) => k.startsWith('diary_'));
+        if (hasDiaries) {
+          setShowMigration(true);
+        } else {
+          // Pull cloud data into local
+          mergeCloudIntoLocal().then(() => {
+            setDiaryData(loadDiary(currentDate));
+          });
+        }
+      }
+    });
+    return () => subscription.unsubscribe();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Groundhog streak / miss triggers (run once after mount)
@@ -127,6 +153,8 @@ export default function Home() {
   const updateDiary = useCallback((data: DiaryData) => {
     setDiaryData(data);
     saveDiary(data);
+    // Fire-and-forget background sync
+    syncDiary(data).catch(() => {/* queued for retry */});
   }, []);
 
   const openAddDialog = (startTime: string) => {
@@ -197,6 +225,10 @@ export default function Home() {
     setSettingsHint(undefined);
   };
 
+  const handleLoginRequest = () => {
+    window.location.href = '/auth';
+  };
+
   // Cache AI greeting into today's diary
   const handleGreetingGenerated = useCallback((text: string) => {
     const today = todayStr();
@@ -222,6 +254,8 @@ export default function Home() {
         onGoalsClick={() => setShowGoals(true)}
         onLogoClick={handleLogoClick}
         activeModelName={activeModelName}
+        onLoginRequest={handleLoginRequest}
+        onSyncComplete={() => mergeCloudIntoLocal().then(() => setDiaryData(loadDiary(currentDate)))}
       />
 
       {/* Inner column: takes all height below header, splits between content and music bar */}
@@ -325,6 +359,11 @@ export default function Home() {
       {/* Meditation overlay */}
       {showMeditation && (
         <MeditationMode onClose={() => setShowMeditation(false)} />
+      )}
+
+      {/* First-login migration */}
+      {showMigration && (
+        <MigrationModal onDone={() => setShowMigration(false)} />
       )}
     </div>
   );

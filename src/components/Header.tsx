@@ -2,6 +2,7 @@
 
 import { formatDate, getWeekDays, addDays, todayStr } from '@/lib/utils';
 import Link from 'next/link';
+import { UserMenu } from '@/components/UserMenu';
 
 interface HeaderProps {
   currentDate: string;
@@ -10,9 +11,11 @@ interface HeaderProps {
   onGoalsClick: () => void;
   onLogoClick?: () => void;
   activeModelName?: string;
+  onLoginRequest?: () => void;
+  onSyncComplete?: () => void;
 }
 
-export function Header({ currentDate, onDateChange, onSettingsClick, onGoalsClick, onLogoClick, activeModelName }: HeaderProps) {
+export function Header({ currentDate, onDateChange, onSettingsClick, onGoalsClick, onLogoClick, activeModelName, onLoginRequest, onSyncComplete }: HeaderProps) {
   const weekDays = getWeekDays(currentDate);
   const today = todayStr();
   const isToday = currentDate === today;
@@ -116,6 +119,12 @@ export function Header({ currentDate, onDateChange, onSettingsClick, onGoalsClic
             )}
             <span className="text-sm">⚙</span>
           </button>
+
+          {/* User auth */}
+          <UserMenu
+            onLoginRequest={onLoginRequest ?? (() => {})}
+            onSyncComplete={onSyncComplete}
+          />
         </div>
       </div>
     </header>
